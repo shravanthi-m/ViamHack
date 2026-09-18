@@ -1,8 +1,24 @@
-"""Latte art team: etch a letter into the foam surface using a held pick."""
+"""
+Latte art team: pour-drawing version.
+
+Picks up a milk/cream/foam source, tilts it to start a pour (same
+theta-ramp technique as pouring.py), traces `letter`'s shape WHILE
+still tilted (the pour stays running as the arm moves through the
+path), then untilts to stop, and returns the source.
+
+This is different from an etching approach (dragging a solid tool
+through already-poured foam): here nothing has been poured into the
+cup yet for this letter -- the pour itself IS the drawing motion.
+Getting a continuous, legible line this way is a genuinely harder
+physical problem than etching, because pour rate, movement speed, and
+height above the cup all have to stay in sync -- move too fast and the
+line breaks up or goes too thin, too slow and it pools instead of
+tracing a clean shape.
+"""
 import asyncio
 
 from .types import Context, Target
-from .manipulation_common import require_frame, move_arm_to_pose, grasp_or_raise, release
+from .manipulation_common import require_frame, move_arm_to_pose, grasp_or_raise, release, ramp_theta
 
 IMPLEMENTED = set()
 
@@ -17,10 +33,17 @@ LETTER_PATHS = {
 def _letter_settings(ctx: Context, letter: str) -> dict:
     """
     config['primitive_settings']['latte_art'][letter] = {
-        'cup_radius_mm': 30.0, 'dip_depth_mm': 3.0,
-        'surface_probe_start_mm': 50.0, 'surface_probe_step_mm': 2.0,
-        'surface_probe_max_descend_mm': 80.0,
+        'tilt_deg': 40.0,          # how far to tilt to start the pour
+        'ramp_up_s': 1.0,          # how long to ramp into full tilt
+        'ramp_down_s': 1.0,        # how long to ramp back down to stop
+        'pour_height_mm': 40.0,    # height above the cup's surface while pouring
+        'cup_radius_mm': 30.0,     # scales the (u, v) path to a real size
+        'dwell_s_per_point': 0.3,  # how long to linger at each path point while pouring
     }
+
+    All of these are placeholders needing real calibration -- pour
+    height and dwell time especially will need physical testing to
+    get a line that reads as a "V" rather than a blob or a broken dribble.
     """
     try:
         return ctx.config['primitive_settings']['latte_art'][letter]
@@ -28,36 +51,8 @@ def _letter_settings(ctx: Context, letter: str) -> dict:
         raise ValueError(f"Missing primitive_settings.latte_art.{letter} in config.") from e
 
 
-async def _find_surface_z(ctx: Context, target: Target, settings: dict) -> float:
-    """
-    PLACEHOLDER CONTACT CHECK: descends the configured max distance
-    and falls back to target['pose']['z'] -- it does NOT yet read
-    real force/current feedback. Wire that in (via your gripper's
-    signal or a dedicated force-torque sensor component) before
-    trusting this on a real drink, since foam height genuinely varies.
-    """
-    pose = target['pose']
-    start_z = pose['z'] + settings.get('surface_probe_start_mm', 50.0)
-    step_mm = settings.get('surface_probe_step_mm', 2.0)
-    max_descend_mm = settings.get('surface_probe_max_descend_mm', 80.0)
-
-    current_z = start_z
-    descended = 0.0
-    while descended < max_descend_mm:
-        current_z -= step_mm
-        descended += step_mm
-        await move_arm_to_pose(ctx, {**pose, 'z': current_z})
-        await asyncio.sleep(0.05)
-
-        contact_detected = False  # ADAPT: wire up real force/current feedback here
-        if contact_detected:
-            return current_z
-
-    return pose['z']
-
-
 async def latte_art(ctx: Context, *, source: Target, target: Target, letter: str = 'V') -> dict:
-    """Start/end empty-handed; pick the etch pick, trace `letter` into target's foam, return the pick."""
+    """Start/end empty-handed; pick up source, tilt to pour, trace `letter` while pouring, stop, return source."""
     letter = letter.upper()
     path = LETTER_PATHS.get(letter)
     if path is None:
@@ -67,7 +62,7 @@ async def latte_art(ctx: Context, *, source: Target, target: Target, letter: str
     require_frame(ctx, source)
     require_frame(ctx, target)
 
-    # Pick up the etching pick
+    # 1. Pick up the milk/cream/foam source
     source_pose = source['pose']
     approach = {**source_pose, 'z': source_pose['z'] + 50.0}
     await move_arm_to_pose(ctx, approach)
@@ -75,32 +70,47 @@ async def latte_art(ctx: Context, *, source: Target, target: Target, letter: str
     await grasp_or_raise(ctx)
     await move_arm_to_pose(ctx, approach)
 
-    # Find the real foam surface by touch, not by assumption
-    surface_z = await _find_surface_z(ctx, target, settings)
-    dip_z = surface_z - settings.get('dip_depth_mm', 3.0)
-    lift_z = surface_z + 20.0
-    cup_radius = settings.get('cup_radius_mm', 30.0)
     target_pose = target['pose']
+    cup_radius = settings.get('cup_radius_mm', 30.0)
+    pour_height = settings.get('pour_height_mm', 40.0)
+    baseline_theta = target_pose['theta']  # "not tilted" reference
+    peak_theta = baseline_theta + settings['tilt_deg']
 
-    def _draw_pose(u: float, v: float, z: float) -> dict:
-        return {**target_pose, 'x': target_pose['x'] + u * cup_radius, 'y': target_pose['y'] + v * cup_radius, 'z': z}
+    def draw_pose(u: float, v: float, theta: float) -> dict:
+        return {
+            **target_pose,
+            'x': target_pose['x'] + u * cup_radius,
+            'y': target_pose['y'] + v * cup_radius,
+            'z': target_pose['z'] + pour_height,
+            'theta': theta,
+        }
 
+    # 2. Move to the V's first point, NOT tilted yet
     first_u, first_v = path[0]
-    await move_arm_to_pose(ctx, _draw_pose(first_u, first_v, lift_z))
-    await move_arm_to_pose(ctx, _draw_pose(first_u, first_v, dip_z))
+    await move_arm_to_pose(ctx, draw_pose(first_u, first_v, baseline_theta))
 
+    # 3. Tilt up to start the pour, staying at that first point
+    await ramp_theta(ctx, draw_pose(first_u, first_v, baseline_theta), baseline_theta, peak_theta, settings['ramp_up_s'])
+
+    # 4. Trace the rest of the path WHILE STILL TILTED -- the pour
+    # keeps running as the arm moves from point to point. This is the
+    # actual "drawing" step.
     for (u, v) in path[1:]:
-        await move_arm_to_pose(ctx, _draw_pose(u, v, dip_z))
+        await move_arm_to_pose(ctx, draw_pose(u, v, peak_theta))
+        await asyncio.sleep(settings.get('dwell_s_per_point', 0.3))
 
+    # 5. Tilt back down at the last point to stop the pour
     last_u, last_v = path[-1]
-    await move_arm_to_pose(ctx, _draw_pose(last_u, last_v, lift_z))
+    await ramp_theta(ctx, draw_pose(last_u, last_v, peak_theta), peak_theta, baseline_theta, settings['ramp_down_s'])
 
-    # Return the pick and release
+    # 6. Lift clear, then return the source and release
+    lift_pose = {**draw_pose(last_u, last_v, baseline_theta), 'z': target_pose['z'] + pour_height + 20.0}
+    await move_arm_to_pose(ctx, lift_pose)
     await move_arm_to_pose(ctx, approach)
     await move_arm_to_pose(ctx, source_pose)
     await release(ctx)
 
-    return {'drew': letter, 'on': target['object_id']}
+    return {'poured_letter': letter, 'on': target['object_id']}
 
 
 IMPLEMENTED.update({'latte_art'})
