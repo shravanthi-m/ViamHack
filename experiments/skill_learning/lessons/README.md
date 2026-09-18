@@ -1,5 +1,10 @@
 # Evidence-backed skill memory
 
+Keep experiment-specific findings here. The active agent aggregates applicable
+lessons into the repository's [shared skill library](../../../skill_library/README.md)
+using [the learning workflow](../../../agents/skill_learning.md), preserving the
+original run evidence and the conditions in which the lesson applies.
+
 After trials, store one short Markdown note per reusable finding here:
 
 - Object/material, measured total mass, fill level, gripper model/module version.

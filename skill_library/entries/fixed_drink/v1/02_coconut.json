@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "instruction": "Localize and pour coconut water into the cup, then return the source.",
+  "steps": [
+    {
+      "id": "cup",
+      "tool": "localize",
+      "args": {
+        "object_id": "cup"
+      }
+    },
+    {
+      "id": "coconut",
+      "tool": "localize",
+      "args": {
+        "object_id": "coconut_water"
+      }
+    },
+    {
+      "id": "pour_coconut",
+      "tool": "pour",
+      "args": {
+        "source": {
+          "$ref": "coconut"
+        },
+        "target": {
+          "$ref": "cup"
+        }
+      }
+    }
+  ]
+}

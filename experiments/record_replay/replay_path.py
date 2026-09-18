@@ -2,10 +2,10 @@
 
 Standalone companion to teach_path.py: no project imports, its own connection.
 
-    python replay_path.py import ~/Downloads/coconut_pour_clean_full.json --name coconut_pour
-    python replay_path.py show tracks/coconut_pour.json
-    python replay_path.py run tracks/coconut_pour.json              # validate only
-    python replay_path.py run tracks/coconut_pour.json --execute    # moves the arm
+    python -m experiments.record_replay.replay_path import ~/Downloads/coconut_pour_clean_full.json --name coconut_pour
+    python -m experiments.record_replay.replay_path show experiments/record_replay/tracks/coconut_pour.json
+    python -m experiments.record_replay.replay_path run experiments/record_replay/tracks/coconut_pour.json              # validate only
+    python -m experiments.record_replay.replay_path run experiments/record_replay/tracks/coconut_pour.json --execute    # moves the arm
 
 Replay is opt-in: without --execute nothing connects and nothing moves. With it,
 the arm must already be near the first waypoint (or pass --goto-start), torque
@@ -38,10 +38,10 @@ def parser():
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = cli.add_subparsers(dest='command', required=True)
 
-    load = sub.add_parser('import', help='Normalize a recording into tracks/<name>.json')
+    load = sub.add_parser('import', help='Normalize a recording into experiments/record_replay/tracks/<name>.json')
     load.add_argument('source', type=Path)
     load.add_argument('--name', help='Track name (default: source filename stem)')
-    load.add_argument('--out', default='tracks')
+    load.add_argument('--out', default=str(Path(__file__).with_name('tracks')))
     load.add_argument('--arm', default='arm')
     load.add_argument('--units', choices=['degrees', 'radians'], default='degrees')
     load.add_argument('--replace', action='store_true')

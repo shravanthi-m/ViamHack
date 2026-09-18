@@ -114,9 +114,12 @@ async def episode(io, config, profile, task, root):
     run.mkdir(parents=True, exist_ok=False)
     write(run / 'config.json', config)
     write(run / 'profile.json', profile)
-    source_root = Path(__file__).resolve().parent.parent
+    source_root = Path(__file__).resolve().parents[3]
     sources = {name: (source_root / name).read_text() for name in
-               ('trial.py', 'trials/runner.py', 'trials/viam_io.py', 'main.py', 'requirements.txt')}
+               ('experiments/skill_learning/trial.py',
+                'experiments/skill_learning/trials/runner.py',
+                'experiments/skill_learning/trials/viam_io.py',
+                'runtime/connection.py', 'requirements.txt')}
     write(run / 'source.json', sources)
     result = dict(status='running', task=task, profile_id=fingerprint(profile),
                   config_id=fingerprint(config), code_id=fingerprint(sources), outcome=None)

@@ -5,20 +5,20 @@ import json
 import signal
 from pathlib import Path
 
-from trials.runner import WAYPOINTS, episode, label, read, report, steps, validate, write
+from experiments.skill_learning.trials.runner import WAYPOINTS, episode, label, read, report, steps, validate, write
 
 
 def parser():
     cli = argparse.ArgumentParser(description=__doc__)
-    cli.add_argument('--config', default='station.json')
-    cli.add_argument('--runs', default='runs')
+    cli.add_argument('--config', default=str(Path(__file__).with_name('station.json')))
+    cli.add_argument('--runs', default=str(Path(__file__).with_name('runs')))
     sub = cli.add_subparsers(dest='command', required=True)
     sub.add_parser('inspect', help='Read resources, current pose, and camera samples; no movement')
     teach = sub.add_parser('teach', help='Save current gripper pose; no movement')
     teach.add_argument('waypoint', choices=WAYPOINTS)
     teach.add_argument('--replace', action='store_true')
     run = sub.add_parser('run')
-    run.add_argument('--profile', default='profiles/cup.json')
+    run.add_argument('--profile', default=str(Path(__file__).with_name('profiles') / 'cup.json'))
     run.add_argument('--task', choices=['pick', 'pour'], default='pick')
     run.add_argument('--execute', action='store_true', help='Actually move the physical robot')
     run.add_argument('--repeat', type=int, default=1)
@@ -33,8 +33,8 @@ def parser():
 
 
 async def connected(args, config):
-    from main import connect
-    from trials.viam_io import ViamIO
+    from runtime.connection import connect
+    from experiments.skill_learning.trials.viam_io import ViamIO
     robot = await asyncio.wait_for(connect(), 30)
     try:
         if args.command == 'stop':
@@ -69,7 +69,7 @@ async def connected(args, config):
                     if answer.strip() != 'ready':
                         break
                 run = await episode(io, config, profile, args.task, args.runs)
-                print(f'Execution completed; label observed outcome: python trial.py label {run} OUTCOME')
+                print(f'Execution completed; label observed outcome: python -m experiments.skill_learning.trial label {run} OUTCOME')
     finally:
         await robot.close()
 

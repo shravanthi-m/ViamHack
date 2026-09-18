@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "instruction": "Localize the cup and spoon, pick up the spoon, insert, stir for five seconds, and return it.",
+  "steps": [
+    {
+      "id": "cup",
+      "tool": "localize",
+      "args": {
+        "object_id": "cup"
+      }
+    },
+    {
+      "id": "spoon",
+      "tool": "localize",
+      "args": {
+        "object_id": "spoon"
+      }
+    },
+    {
+      "id": "pick_spoon",
+      "tool": "pick_up",
+      "args": {
+        "target": {
+          "$ref": "spoon"
+        }
+      }
+    },
+    {
+      "id": "insert_spoon",
+      "tool": "insert_into",
+      "args": {
+        "target": {
+          "$ref": "cup"
+        }
+      }
+    },
+    {
+      "id": "stir_cup",
+      "tool": "stir",
+      "args": {
+        "target": {
+          "$ref": "cup"
+        },
+        "duration_s": 5
+      }
+    },
+    {
+      "id": "return_spoon",
+      "tool": "place_back",
+      "args": {
+        "target": {
+          "$ref": "spoon"
+        }
+      }
+    }
+  ]
+}

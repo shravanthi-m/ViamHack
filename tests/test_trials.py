@@ -5,19 +5,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-from trials.runner import episode, label, orientation_error, read, report, validate
-from trials.viam_io import ViamIO
+from experiments.skill_learning.trials.runner import episode, label, orientation_error, read, report, validate
+from experiments.skill_learning.trials.viam_io import ViamIO
 
 
 def fixture():
-    config = read('station.example.json')
+    config = read(Path(__file__).resolve().parents[1] / 'experiments/skill_learning/station.example.json')
     config['calibrated'] = True
     config['workspace_mm'] = {'x': [-100, 100], 'y': [-100, 100], 'z': [0, 300]}
     for name in config['waypoints']:
         config['waypoints'][name] = dict(x=0, y=0, z=100, o_x=0, o_y=0, o_z=1, theta=0)
     config['waypoints']['lift']['z'] = 130
     config['waypoints']['pour_tilt']['theta'] = 45
-    profile = read('profiles/cup.json')
+    profile = read(Path(__file__).resolve().parents[1] / 'experiments/skill_learning/profiles/cup.json')
     profile.update(hold_s=0, pour_dwell_s=0)
     return config, profile
 

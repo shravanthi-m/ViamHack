@@ -6,7 +6,7 @@ never commands the arm, so put the arm into manual / free-drive mode yourself
 (UFactory Studio or the Viam control tab) before typing start, and take it back
 out before running anything that moves.
 
-    python teach_path.py --name coconut_pour
+    python -m experiments.record_replay.teach_path --name coconut_pour
 """
 import argparse
 import asyncio
@@ -35,7 +35,7 @@ def parser():
     cli = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     cli.add_argument('--arm', default='arm', help='Arm component name')
-    cli.add_argument('--out', default='paths', help='Directory for recorded paths')
+    cli.add_argument('--out', default=str(Path(__file__).with_name('paths')), help='Directory for recorded paths')
     cli.add_argument('--name', default='coconut_pour', help='Path name, used in the filename')
     cli.add_argument('--hz', type=float, default=10.0, help='Samples per second (1..50)')
     cli.add_argument('--address', default=os.environ.get('VIAM_MACHINE_ADDRESS', DEFAULT_ADDRESS))

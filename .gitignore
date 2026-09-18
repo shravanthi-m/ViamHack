@@ -3,8 +3,8 @@
 __pycache__/
 *.pyc
 secrets.toml
-*.json
-!station.example.json
-!profiles/*.json
-!tracks/*.json
+.DS_Store
+config/local.json
+experiments/skill_learning/station.json
+experiments/record_replay/paths/
 runs/

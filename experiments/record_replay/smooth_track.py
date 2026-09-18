@@ -5,7 +5,7 @@ default everything from the moment the wrist first turns, i.e. the pour and the
 return) is copied through verbatim, so only the travel up to the pour is
 reshaped.
 
-    python smooth_track.py tracks/coconut_pour.json --name coconut_pour_smooth
+    python -m experiments.record_replay.smooth_track experiments/record_replay/tracks/coconut_pour.json --name coconut_pour_smooth
 
 The rebuilt approach keeps the recorded route but removes idle samples and hand
 jitter, then re-times it with an ease-in-out profile so it starts and ends at
@@ -24,7 +24,7 @@ def parser():
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     cli.add_argument('track', type=Path)
     cli.add_argument('--name', help='Output track name (default: <input>_smooth)')
-    cli.add_argument('--out', default='tracks')
+    cli.add_argument('--out', default=str(Path(__file__).with_name('tracks')))
     cli.add_argument('--replace', action='store_true')
     cli.add_argument('--pre-pour-pause', type=float, default=0.5,
                      help='Settle time between the end of the approach and the preserved tail')
