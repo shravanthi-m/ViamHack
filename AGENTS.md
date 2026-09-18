@@ -36,5 +36,8 @@ mock completion and successful API calls are not physical success evidence.
 
 Preserve the explicit registry and shared target contract. Reject unsupported
 tasks rather than invent tools, coordinates, or unimplemented capabilities. Keep
-credentials, local calibration, and run evidence out of Git. After integration
-changes, run `python -m unittest discover -s tests -v` with requirements installed.
+credentials, per-machine configuration, and run evidence out of Git. A measured
+calibration the whole station shares, such as a camera homography under `config/`,
+is versioned as its own artifact so every machine reads the same measurement; the
+local config that names it stays ignored. After integration changes, run
+`python -m unittest discover -s tests -v` with requirements installed.

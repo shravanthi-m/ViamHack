@@ -3,6 +3,8 @@ import json
 import math
 from pathlib import Path
 
+from .calibration import settings as calibration_settings
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / 'config/demo.json'
 POSE_FIELDS = ('x', 'y', 'z', 'o_x', 'o_y', 'o_z', 'theta')
@@ -61,6 +63,7 @@ def validate_config(config, *, execute=False):
             number(value, -10000, 10000, f'workspace_mm.{axis}')
         if pair[0] >= pair[1]:
             raise ValueError(f'workspace_mm.{axis} minimum must be below maximum')
+    calibration_settings(config)  # Optional; present once bounds are derived from the machine.
 
 
 def validate_pose(pose, config, *, execute=False):

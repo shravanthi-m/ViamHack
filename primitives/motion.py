@@ -119,17 +119,21 @@ async def plan_to(ctx: Context, wanted: Pose, tuning, timeout, name) -> dict:
     """Plan to a full task-frame pose through Viam, then verify where the tool stopped.
 
     The motion service owns planning, frame transforms, and collision avoidance
-    against the machine's configured geometry. This adds only the task-level part:
+    against the machine's configured geometry. This adds the task-level part:
     checking that the arm actually arrived.
+
+    This is deliberately the only way to move in this module, so no caller can plan
+    without verifying. Every move costs a reading round trip, including each stroke
+    of a repeated motion; that cost is the point.
     """
     from viam.proto.common import Pose as ViamPose, PoseInFrame
     from viam.services.motion import MotionClient
 
     config = ctx.config
-    tool = config['resources']['gripper']
     motion = MotionClient.from_robot(ctx.robot, config['resources']['motion'])
     destination = PoseInFrame(reference_frame=config['frame'], pose=ViamPose(**wanted))
-    if not await motion.move(component_name=tool, destination=destination, timeout=timeout):
+    if not await motion.move(component_name=config['resources']['gripper'],
+                             destination=destination, timeout=timeout):
         raise RuntimeError(f'Viam motion service could not plan or complete {name}')
     reached = await tool_pose(ctx)
     offset = deviation(reached, wanted)

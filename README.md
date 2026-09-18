@@ -89,7 +89,7 @@ serially and handles result references, timeouts, stopping, and logs.
 | Work area | Team handoff |
 | --- | --- |
 | Motion and pouring | Implement `go_to_pose` and a reliable pick → pour → return/release cycle; specialize pouring for coffee and coconut water |
-| Perception | Implement `localize`, returning an object target in the configured frame; develop against saved observations while the arm is occupied |
+| Perception | Implement `localize`, returning an object target in the configured frame; the measured overhead pixel-to-millimetre transform is already wired, so detection is what is left; develop against saved observations while the arm is occupied |
 | Spoon and integration | Implement pick, insert, stir, and return; coordinate configuration and end-to-end handoffs |
 
 Start with [primitives/README.md](primitives/README.md) and
@@ -162,7 +162,8 @@ skill_library/                  Agent-maintained recipes, gates, recovery, findi
   techniques/                   Reusable Markdown knowledge across tasks
   templates/                    Review, findings, and validation artifacts
 primitives/                     Human-owned tool implementations and contracts
-  localization.py               Locate objects in the task frame
+  camera.py                     Photograph a configured camera view
+  localization.py               Locate objects in the task frame (pixel -> mm)
   motion.py                     Go to a pose
   pouring.py                    Pick, pour, return, and release
   spoon.py                      Pick, insert, stir, and return
@@ -198,16 +199,21 @@ and the existing trial tests require `requirements.txt`.
    ID locally. Keep credentials out of chat and Git.
 3. Have the agent run the read-only machine inspection to check resource names
    and configured frames.
-4. Copy `config/demo.json` to `config/local.json`. Set the resource bindings and
-   measured workspace bounds, then mark it calibrated once verified.
-5. Have the agent check that every primitive needed by the plan is implemented
+4. Copy `config/demo.json` to `config/local.json` and set the resource bindings.
+5. Derive the workspace bounds from the machine's own obstacle geometry with
+   `python -m runtime --config config/local.json calibrate`. It reads the frame
+   system, shrinks the free space by the configured tool's extent and a clearance
+   margin, and prints which obstacle set each face. Re-run it with `--write` to
+   save the bounds and mark the config calibrated. Review them first: they are
+   only as right as the machine geometry behind them.
+6. Have the agent check that every primitive needed by the plan is implemented
    before requesting a physical run.
 
 Viam remains the source for hardware models, driver settings, frame geometry, and
 module-specific torque/simulation settings. Local configuration holds task roles,
-allowed objects, time limits, and the measured task workspace. Inspection reads
-resource names and frame configuration; it does not automatically import arbitrary
-hardware settings or calibrate the workspace. See
+allowed objects, time limits, and the task workspace derived from that geometry.
+Inspection reads resource names and frame configuration; it does not automatically
+import arbitrary hardware settings, and neither command changes the machine. See
 [the configuration guide](docs/configuration.md) for the boundary and Viam API references.
 
 During execution, a failure, cancellation, or timeout requests StopAll and records

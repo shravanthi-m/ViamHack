@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from primitives import mock
+from primitives import camera, mock
 from primitives.registry import TOOLS, implementations
 from primitives.types import Context
 from .config import fields, number, validate_config, validate_target, validate_yaw_pose
@@ -41,6 +41,9 @@ def validate_plan(plan, config, *, execute=False):
             elif kind == 'object':
                 if value not in config['objects']:
                     raise ValueError(f'Unknown object: {value}')
+            elif kind == 'view':
+                if value not in camera.views(config):
+                    raise ValueError(f'Unknown camera view: {value}')
             elif kind == 'pose':
                 validate_yaw_pose(value, config, execute=execute)
             elif kind == 'duration':

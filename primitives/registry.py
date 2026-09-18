@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from types import ModuleType
 
-from . import localization, motion, pouring, spoon
+from . import camera, gripper, localization, motion, pouring, shake, spoon
 
 
 @dataclass(frozen=True)
@@ -13,12 +13,16 @@ class Tool:
 
 TOOLS = {
     'localize': Tool(localization, {'object_id': 'object'}),
+    'capture': Tool(camera, {'view': 'view'}),
+    'close_gripper': Tool(gripper, {'force_percent': 'force'}),
+    'open_gripper': Tool(gripper, {}),
     'go_to_origin': Tool(motion, {}),
     'go_to_pose': Tool(motion, {'pose': 'pose'}),
     'pour': Tool(pouring, {'source': 'target', 'target': 'target'}),
     'pick_up': Tool(spoon, {'target': 'target'}),
     'insert_into': Tool(spoon, {'target': 'target'}),
     'stir': Tool(spoon, {'target': 'target', 'duration_s': 'duration'}),
+    'shake': Tool(shake, {'duration_s': 'duration'}),
     'place_back': Tool(spoon, {'target': 'target'}),
 }
 
@@ -32,8 +36,14 @@ def catalog(config):
     """Machine-readable planner interface, generated from the same registry we dispatch."""
     schemas = {
         'object': {'type': 'string', 'enum': config['objects']},
+        'view': {'type': 'string', 'enum': sorted(camera.views(config)),
+                 'description': 'A camera the station declares, not a Viam resource name.'},
         'duration': {'type': 'number', 'exclusiveMinimum': 0,
                      'maximum': config['limits']['max_stir_duration_s']},
+        'force': {'type': 'number', 'exclusiveMinimum': 0,
+                  'maximum': gripper.max_force(config),
+                  'description': 'Grip force as a percent of the gripper rated torque, '
+                                 'capped by primitive_settings.gripper.max_force_percent.'},
         'target': {'type': 'object', 'properties': {'$ref': {'type': 'string'}},
                    'required': ['$ref'], 'additionalProperties': False,
                    'description': 'ID of an earlier localize step; resolved by the runtime.'},

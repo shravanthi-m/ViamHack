@@ -6,13 +6,17 @@ runs and is never a fallback for physical execution.
 
 | Function | Module | Contract |
 | --- | --- | --- |
-| `localize(ctx, object_id=...)` | `localization.py` | Return `Target` in configured frame; raise when uncertain |
+| `localize(ctx, object_id=...)` | `localization.py` | Return `Target` in configured frame; raise when uncertain (hand-eye transform supplied) |
+| `capture(ctx, view=...)` | `camera.py` | Photograph a configured view; write the file and report it (implemented) |
+| `close_gripper(ctx, force_percent=...)` | `gripper.py` | Close at a verified force → holding, or raise (implemented) |
+| `open_gripper(ctx)` | `gripper.py` | Open and confirm nothing is held (implemented) |
 | `go_to_origin(ctx)` | `motion.py` | Plan back to the taught origin pose (implemented) |
 | `go_to_pose(ctx, pose=...)` | `motion.py` | Move to an explicitly supplied task-frame `x`/`y`/`z` and `yaw` (implemented) |
 | `pour(ctx, source=..., target=...)` | `pouring.py` | Empty hand → pick source, pour into target, return source, release → empty hand |
 | `pick_up(ctx, target=...)` | `spoon.py` | Empty hand → hold spoon |
 | `insert_into(ctx, target=...)` | `spoon.py` | Held spoon → inserted in cup, still held |
 | `stir(ctx, target=..., duration_s=...)` | `spoon.py` | Inserted spoon → stir → still inserted and held |
+| `shake(ctx, duration_s=...)` | `shake.py` | Held object → oscillate in place → still held at the start pose (implemented) |
 | `place_back(ctx, target=...)` | `spoon.py` | Withdraw spoon, return to original spoon target, release |
 
 `pour` can dispatch on `source['object_id']` to separately implemented coffee and
@@ -23,7 +27,76 @@ section of the local config, which the responsible primitive must validate.
 `motion.py` reads `primitive_settings.motion` for `position_tolerance_mm` and
 `orientation_tolerance_deg` (both 5), `joint_tolerance_deg` (2), `speed_deg_s`
 (unset, which leaves the arm module's own speed alone), `origin_pose`, and
-`origin_joints_deg`.
+`origin_joints_deg`. `camera.py` reads `primitive_settings.camera` for `views` and
+`image_dir` (`runs/images`, which Git ignores). `localization.py` reads
+`primitive_settings.localization` for `homographies` and `hover_z_mm`.
+
+`capture` names a view, never a Viam resource, so a plan cannot reach a camera the
+station has not declared. `views` maps those names to camera resources:
+
+```json
+"camera": {"views": {"wrist": "cam", "overhead": "overhead-cam"}}
+```
+
+Without that block the one camera in `resources` is the `wrist` view and there is no
+`overhead`. `python -m runtime tools` shows the enum a planner may choose from, and
+a physical run checks every configured camera exists before it starts. A run log has
+to stay JSON, so the image does not come back in the result: the bytes are written
+to `image_dir` and the result carries the path, mime type, byte count, pixel size,
+and the camera's own capture time. `get_images` returns one entry per imager, so an
+RGB-D camera like the wrist `cam` yields colour and depth from a single call and
+`images` is a list. `capture` proves a picture exists; it never claims what is in
+it, and it moves nothing.
+
+## Pixels to millimetres
+
+Detection is OpenCV's job and stays out of `localization.py`. What the module does
+supply is the step after it: the measured hand-eye calibration that turns a pixel a
+detector found into a place the arm can be sent.
+
+That calibration is a 3x3 planar homography per camera view, measured once and kept
+in its own JSON artifact, which `primitive_settings.localization.homographies` names
+by view:
+
+```json
+"localization": {
+  "homographies": {"overhead": "config/overhead_homography.json"},
+  "hover_z_mm": null
+}
+```
+
+A view here must be one `primitive_settings.camera.views` declares, so a calibration
+cannot refer to a camera the station does not have. `config/overhead_homography.json`
+holds the overhead station calibration: `H`, the frame and units it was measured
+against, and its reported `mean_error_mm` and `max_error_mm`.
+
+```python
+from primitives import localization
+
+found = localization.pixel_to_frame(ctx.config, 'overhead', px, py)
+pose = localization.hover_pose(ctx.config, found['x'], found['y'], yaw=0.0)
+await motion.go_to_pose(ctx, pose=pose)
+```
+
+- `pixel_to_frame(config, view, px, py)` returns task-frame `x`/`y` in millimetres,
+  the local `scale` in millimetres per pixel, the calibration's own `accuracy_mm`,
+  and `in_workspace`. It reports; it never decides a detection is good enough. The
+  overhead calibration's mean error is **27 mm** and its worst is **68 mm**, so gate
+  on that error before trusting one for a grasp.
+- `scale_mm_per_px(H, px, py)` converts a pixel *length* -- a detected radius or
+  width -- into millimetres. A homography is not one constant scale: perspective
+  makes it vary across the image, which is why it is asked for at a pixel.
+- `hover_pose(config, x, y, z=..., yaw=...)` builds the `go_to_pose` argument that
+  puts the tool over that point. It refuses a point outside the calibrated
+  workspace, which is the usual fate of a detection near the edge of the frame.
+
+Two limits are structural, not bugs. A planar homography knows the calibrated
+**surface** and nothing about height, so `z` is always a task decision: it comes
+from `hover_z_mm` or the caller, has to clear the tallest object standing on the
+plane, and `hover_pose` raises rather than invent one. And the mapping is tied to
+the **image resolution it was calibrated at** -- a detector running on a resized or
+cropped frame must scale its pixels back to that resolution first, or every position
+is wrong by the resize factor.
 
 `go_to_pose` and `go_to_origin` are both thin abstractions over the Viam motion
 service, so obstacle avoidance comes from the machine's configured frame system and
