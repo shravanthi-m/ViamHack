@@ -17,7 +17,7 @@ from viam.proto.common import Pose
 
 API_KEY = 'mkqtlf6zzzq5dn3kbb0fcywoz4dgejvt'
 API_KEY_ID = '6026240d-6390-44f2-b7fc-8298407fcc9a'
-MACHINE_ADDRESS = 'armfarm7-main.XXXX.viam.cloud'
+MACHINE_ADDRESS = 'armfarm7-main.310sld03v2.viam.cloud'
 ARM_NAME = 'arm'
 
 AMPLITUDE_MM = 15.0   # how far up/down each stroke travels
