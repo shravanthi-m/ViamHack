@@ -15,9 +15,9 @@ from viam.robot.client import RobotClient
 from viam.components.arm import Arm
 from viam.proto.common import Pose
 
-API_KEY = '<KEY>'
-API_KEY_ID = '<KEY_ID>'
-MACHINE_ADDRESS = 'armfarm1-main.XXXX.viam.cloud'
+API_KEY = 'mkqtlf6zzzq5dn3kbb0fcywoz4dgejvt'
+API_KEY_ID = '6026240d-6390-44f2-b7fc-8298407fcc9a'
+MACHINE_ADDRESS = 'armfarm7-main.XXXX.viam.cloud'
 ARM_NAME = 'arm'
 
 AMPLITUDE_MM = 15.0   # how far up/down each stroke travels
