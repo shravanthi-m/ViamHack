@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 secrets.toml
 *.json
+!station.example.json
+!profiles/*.json
+!tracks/*.json
+runs/

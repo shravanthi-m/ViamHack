@@ -1,0 +1,7 @@
+{
+  "object": {"id": "rigid-cup", "mass_g": 100, "compliance": "rigid"},
+  "speed_deg_s": 5,
+  "grip_force_percent": null,
+  "hold_s": 2,
+  "pour_dwell_s": 1
+}
