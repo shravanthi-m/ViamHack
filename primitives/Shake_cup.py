@@ -26,8 +26,8 @@ MACHINE_ADDRESS = 'armfarm7-main.310sld03v2.viam.cloud'
 ARM_NAME = 'arm'
 
 AMPLITUDE_MM = 15.0    # how far up/down each stroke travels
-SHAKE_HZ = 1.5         # actual shake cycles per second -- keep modest at first
-SAMPLE_RATE_HZ = 15.0  # how many waypoints per second we send -- this is what controls smoothness, not SHAKE_HZ
+SHAKE_HZ = 30        # actual shake cycles per second -- keep modest at first
+SAMPLE_RATE_HZ = 20.0  # how many waypoints per second we send -- this is what controls smoothness, not SHAKE_HZ
 DURATION_S = 6.0
 
 
