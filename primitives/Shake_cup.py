@@ -21,7 +21,7 @@ MACHINE_ADDRESS = 'armfarm7-main.310sld03v2.viam.cloud'
 ARM_NAME = 'arm'
 
 AMPLITUDE_MM = 15.0   # how far up/down each stroke travels
-HZ = 1.0              # cycles per second -- start SLOW so you can watch it
+HZ = 20.0              # cycles per second -- start SLOW so you can watch it
 DURATION_S = 6.0
 
 
