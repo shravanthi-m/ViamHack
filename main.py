@@ -1,11 +1,31 @@
-import asyncio, sys
+import asyncio
+import os
+import sys
+
+from dotenv import load_dotenv
 from viam.robot.client import RobotClient
+
 from config import DRINKS
 from pour import pour_cycle
 
-async def connect():
-    # reuse your existing connect logic from helpers.py
-    pass
+# Credentials live in .env (see .env.example); real environment variables win.
+load_dotenv()
+
+MACHINE_ADDRESS = os.environ.get(
+    "VIAM_MACHINE_ADDRESS", "armfarm7-main.310sld03v2.viam.cloud"
+)
+
+
+async def connect() -> RobotClient:
+    api_key = os.environ.get("VIAM_API_KEY")
+    api_key_id = os.environ.get("VIAM_API_KEY_ID")
+    if not api_key or not api_key_id:
+        raise SystemExit(
+            "Set VIAM_API_KEY and VIAM_API_KEY_ID (see .env.example) before running."
+        )
+
+    options = RobotClient.Options.with_api_key(api_key=api_key, api_key_id=api_key_id)
+    return await RobotClient.at_address(MACHINE_ADDRESS, options)
 
 async def main(drink: str):
     robot = await connect()
