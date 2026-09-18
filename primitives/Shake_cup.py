@@ -15,14 +15,20 @@ the jerky stop-start motion by:
 """
 import asyncio
 import math
+import os
+from pathlib import Path
 
-from viam.robot.client import RobotClient
+from dotenv import load_dotenv
 from viam.components.arm import Arm
 from viam.proto.common import Pose
+from viam.robot.client import RobotClient
 
-API_KEY = 'mkqtlf6zzzq5dn3kbb0fcywoz4dgejvt'
-API_KEY_ID = '6026240d-6390-44f2-b7fc-8298407fcc9a'
-MACHINE_ADDRESS = 'armfarm7-main.310sld03v2.viam.cloud'
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / ".env")
+
+API_KEY = os.environ.get("VIAM_API_KEY")
+API_KEY_ID = os.environ.get("VIAM_API_KEY_ID")
+MACHINE_ADDRESS = os.environ.get("VIAM_MACHINE_ADDRESS")
 ARM_NAME = 'arm'
 
 AMPLITUDE_MM = 15.0    # how far up/down each stroke travels
@@ -32,6 +38,11 @@ DURATION_S = 6.0
 
 
 async def connect():
+    if not API_KEY or not API_KEY_ID or not MACHINE_ADDRESS:
+        raise SystemExit(
+            "Set VIAM_API_KEY, VIAM_API_KEY_ID, and VIAM_MACHINE_ADDRESS in .env."
+        )
+
     opts = RobotClient.Options.with_api_key(api_key=API_KEY, api_key_id=API_KEY_ID)
     return await RobotClient.at_address(MACHINE_ADDRESS, opts)
 
