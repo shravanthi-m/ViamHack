@@ -1,13 +1,167 @@
 {
-  "resources": {"arm": "arm", "gripper": "gripper", "camera": "cam", "motion": "builtin"},
+  "resources": {
+    "arm": "arm",
+    "gripper": "gripper",
+    "camera": "cam",
+    "motion": "builtin"
+  },
   "frame": "world",
-  "objects": ["coffee", "coconut_water", "cup", "spoon"],
-  "calibrated": false,
-  "workspace_mm": {"x": null, "y": null, "z": null},
+  "objects": [
+    "coffee",
+    "coconut_water",
+    "cup",
+    "spoon"
+  ],
+  "calibrated": true,
+  "workspace_mm": {
+    "x": [
+      -805.0,
+      609.2
+    ],
+    "y": [
+      -805.0,
+      369.2
+    ],
+    "z": [
+      37.0,
+      805.0
+    ]
+  },
   "limits": {
     "max_steps": 24,
     "primitive_timeout_s": 60,
     "run_timeout_s": 600,
     "max_stir_duration_s": 15
+  },
+  "primitive_settings": {
+    "motion": {
+      "speed_deg_s": 10.0,
+      "origin_pose": {
+        "x": 493.2835264357844,
+        "y": -48.69578253451906,
+        "z": 202.22245926981822,
+        "o_x": 0.9903479347714009,
+        "o_y": -0.13027255732461018,
+        "o_z": -0.047328943598255686,
+        "theta": -178.00376420594185
+      }
+    },
+    "camera": {
+      "views": {
+        "wrist": "cam",
+        "overhead": "overhead-cam"
+      }
+    },
+    "localization": {
+      "homographies": {
+        "overhead": "config/overhead_homography.json"
+      },
+      "hover_z_mm": null
+    }
+  },
+  "calibration": {
+    "margin_mm": 10.0,
+    "reach_mm": 805.0,
+    "derived": {
+      "source": "viam_frame_system",
+      "at": "2026-09-18T21:34:43+00:00",
+      "bounds_from": {
+        "x": [
+          "reach",
+          "wall-front"
+        ],
+        "y": [
+          "reach",
+          "wall-side"
+        ],
+        "z": [
+          "table",
+          "reach"
+        ]
+      },
+      "anchor_mm": [
+        493.284,
+        -48.696,
+        202.222
+      ],
+      "arm_base_mm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tool_mm": {
+        "above_mm": 110.0,
+        "below_mm": 50.0,
+        "radius_mm": 70.755
+      },
+      "obstacles": [
+        {
+          "name": "wall-front",
+          "min": [
+            690.0,
+            -1500.0,
+            -500.0
+          ],
+          "max": [
+            790.0,
+            1500.0,
+            1100.0
+          ]
+        },
+        {
+          "name": "ceiling",
+          "min": [
+            -1500.0,
+            -1500.0,
+            1000.0
+          ],
+          "max": [
+            1500.0,
+            1500.0,
+            1100.0
+          ]
+        },
+        {
+          "name": "table",
+          "min": [
+            -1500.0,
+            -1500.0,
+            -223.0
+          ],
+          "max": [
+            1500.0,
+            1500.0,
+            -23.0
+          ]
+        },
+        {
+          "name": "wall-side",
+          "min": [
+            -1500.0,
+            450.0,
+            -500.0
+          ],
+          "max": [
+            1500.0,
+            550.0,
+            1100.0
+          ]
+        }
+      ],
+      "skipped": [
+        {
+          "frame": "cam",
+          "reason": "configured task resource"
+        },
+        {
+          "frame": "gripper",
+          "reason": "configured task resource"
+        },
+        {
+          "frame": "arm",
+          "reason": "configured task resource"
+        }
+      ]
+    }
   }
 }
