@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from types import ModuleType
 
-from . import camera, gripper, localization, motion, pouring, shake, spoon
+from . import camera, gripper, latte_art, localization, motion, pouring, shake, spoon
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ TOOLS = {
     'stir': Tool(spoon, {'target': 'target', 'duration_s': 'duration'}),
     'shake': Tool(shake, {'duration_s': 'duration'}),
     'place_back': Tool(spoon, {'target': 'target'}),
+    'latte_art': Tool(latte_art, {'source': 'target', 'target': 'target', 'letter': 'letter'}),
 }
 
 
@@ -52,6 +53,7 @@ def catalog(config):
                  'yaw': {'type': 'number', 'minimum': -180, 'maximum': 180}},
                  'required': ['x', 'y', 'z', 'yaw'], 'additionalProperties': False,
                  'description': 'Task-frame position in mm and yaw in degrees, tool pointing down.'},
+        'letter': {'type': 'string', 'enum': list(latte_art.LETTER_PATHS.keys())},
     }
     ready = implementations()
     return [dict(name=name, description=getattr(tool.module, name).__doc__,
