@@ -1,0 +1,23 @@
+{
+  "resources": {"arm": "arm", "gripper": "gripper", "camera": "cam", "motion": "builtin"},
+  "frame": "world",
+  "gripper_mode": "native",
+  "calibrated": false,
+  "workspace_mm": {"x": null, "y": null, "z": null},
+  "limits": {
+    "max_speed_deg_s": 10,
+    "max_grip_force_percent": 30,
+    "command_timeout_s": 15,
+    "episode_timeout_s": 300,
+    "start_tolerance_mm": 10,
+    "start_orientation_tolerance_deg": 5
+  },
+  "world_state": {},
+  "waypoints": {
+    "pregrasp": null,
+    "grasp": null,
+    "lift": null,
+    "pour_ready": null,
+    "pour_tilt": null
+  }
+}

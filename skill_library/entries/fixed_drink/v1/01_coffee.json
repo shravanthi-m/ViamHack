@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "instruction": "Localize and pour coffee into the cup, then return the source.",
+  "steps": [
+    {
+      "id": "cup",
+      "tool": "localize",
+      "args": {
+        "object_id": "cup"
+      }
+    },
+    {
+      "id": "coffee",
+      "tool": "localize",
+      "args": {
+        "object_id": "coffee"
+      }
+    },
+    {
+      "id": "pour_coffee",
+      "tool": "pour",
+      "args": {
+        "source": {
+          "$ref": "coffee"
+        },
+        "target": {
+          "$ref": "cup"
+        }
+      }
+    }
+  ]
+}

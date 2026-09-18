@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "instruction": "Pour coffee into the cup, then coconut water, then pick up the spoon, insert it into the cup, stir for 5 seconds, and put the spoon back.",
+  "steps": [
+    {"id": "cup", "tool": "localize", "args": {"object_id": "cup"}},
+    {"id": "coffee", "tool": "localize", "args": {"object_id": "coffee"}},
+    {"id": "pour_coffee", "tool": "pour", "args": {"source": {"$ref": "coffee"}, "target": {"$ref": "cup"}}},
+    {"id": "coconut", "tool": "localize", "args": {"object_id": "coconut_water"}},
+    {"id": "pour_coconut", "tool": "pour", "args": {"source": {"$ref": "coconut"}, "target": {"$ref": "cup"}}},
+    {"id": "spoon", "tool": "localize", "args": {"object_id": "spoon"}},
+    {"id": "pick_spoon", "tool": "pick_up", "args": {"target": {"$ref": "spoon"}}},
+    {"id": "insert_spoon", "tool": "insert_into", "args": {"target": {"$ref": "cup"}}},
+    {"id": "stir_cup", "tool": "stir", "args": {"target": {"$ref": "cup"}, "duration_s": 5}},
+    {"id": "return_spoon", "tool": "place_back", "args": {"target": {"$ref": "spoon"}}}
+  ]
+}
