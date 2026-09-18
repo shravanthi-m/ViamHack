@@ -49,10 +49,26 @@ class PlanTests(unittest.TestCase):
     def test_explicit_pose_bounds_checked_before_execution(self):
         _, config = fixture()
         plan = dict(version=1, instruction='Move to supplied pose', steps=[
-            dict(id='move', tool='go_to_pose', args={'pose': dict(
-                x=101, y=0, z=100, o_x=0, o_y=0, o_z=1, theta=0)})])
+            dict(id='move', tool='go_to_pose', args={'pose': dict(x=101, y=0, z=100, yaw=0)})])
         with self.assertRaises(ValueError):
             validate_plan(plan, config, execute=True)
+        plan['steps'][0]['args']['pose']['x'] = 100
+        validate_plan(plan, config, execute=True)
+
+    def test_go_to_pose_takes_position_and_yaw_only(self):
+        _, config = fixture()
+        plan = dict(version=1, instruction='Move to supplied pose', steps=[
+            dict(id='move', tool='go_to_pose', args={'pose': dict(x=0, y=0, z=100, yaw=0)})])
+        poses = (dict(x=0, y=0, z=100, o_x=0, o_y=0, o_z=1, theta=0),  # full Viam pose
+                 dict(x=0, y=0, z=100),                                # missing yaw
+                 dict(x=0, y=0, z=100, yaw=181),                       # yaw out of range
+                 dict(x=0, y=0, z=100, yaw=float('nan')))
+        for pose in poses:
+            with self.subTest(pose=pose):
+                altered = copy.deepcopy(plan)
+                altered['steps'][0]['args']['pose'] = pose
+                with self.assertRaises(ValueError):
+                    validate_plan(altered, config)
 
 
 class ExecutionTests(unittest.IsolatedAsyncioTestCase):

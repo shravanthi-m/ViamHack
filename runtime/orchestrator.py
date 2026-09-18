@@ -9,7 +9,7 @@ from uuid import uuid4
 from primitives import mock
 from primitives.registry import TOOLS, implementations
 from primitives.types import Context
-from .config import fields, number, validate_config, validate_pose, validate_target
+from .config import fields, number, validate_config, validate_target, validate_yaw_pose
 
 
 def validate_plan(plan, config, *, execute=False):
@@ -42,7 +42,7 @@ def validate_plan(plan, config, *, execute=False):
                 if value not in config['objects']:
                     raise ValueError(f'Unknown object: {value}')
             elif kind == 'pose':
-                validate_pose(value, config, execute=execute)
+                validate_yaw_pose(value, config, execute=execute)
             elif kind == 'duration':
                 number(value, 0, config['limits']['max_stir_duration_s'], 'duration_s')
                 if value == 0:

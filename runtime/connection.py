@@ -7,6 +7,15 @@ from pathlib import Path
 async def connect():
     from dotenv import load_dotenv
     from viam.robot.client import RobotClient
+    # RobotClient builds its resource manager while connecting, and only creates
+    # clients for resource types whose class is already imported. Primitives import
+    # their SDK clients lazily, so anything imported after this call is missing from
+    # the manager and from_robot raises ResourceNotFoundError. Import every resource
+    # type the task config can name, before connecting.
+    from viam.components.arm import Arm  # noqa: F401
+    from viam.components.camera import Camera  # noqa: F401
+    from viam.components.gripper import Gripper  # noqa: F401
+    from viam.services.motion import MotionClient  # noqa: F401
 
     load_dotenv(Path(__file__).resolve().parents[1] / '.env')
     address = os.environ.get('VIAM_MACHINE_ADDRESS')

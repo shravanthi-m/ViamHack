@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / 'config/demo.json'
 POSE_FIELDS = ('x', 'y', 'z', 'o_x', 'o_y', 'o_z', 'theta')
+YAW_POSE_FIELDS = ('x', 'y', 'z', 'yaw')
 
 
 def read_json(path):
@@ -68,6 +69,17 @@ def validate_pose(pose, config, *, execute=False):
         number(pose[key], -10000, 10000, f'pose.{key}')
     if sum(pose[key] ** 2 for key in ('o_x', 'o_y', 'o_z')) < 1e-8:
         raise ValueError('Pose orientation vector cannot be zero')
+    if execute:
+        for axis in ('x', 'y', 'z'):
+            number(pose[axis], *config['workspace_mm'][axis], f'pose.{axis}')
+
+
+def validate_yaw_pose(pose, config, *, execute=False):
+    """Planner-supplied go_to_pose argument: position in mm, yaw in degrees."""
+    fields(pose, YAW_POSE_FIELDS, 'pose')
+    for axis in ('x', 'y', 'z'):
+        number(pose[axis], -10000, 10000, f'pose.{axis}')
+    number(pose['yaw'], -180, 180, 'pose.yaw')
     if execute:
         for axis in ('x', 'y', 'z'):
             number(pose[axis], *config['workspace_mm'][axis], f'pose.{axis}')

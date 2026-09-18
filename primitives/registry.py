@@ -13,6 +13,7 @@ class Tool:
 
 TOOLS = {
     'localize': Tool(localization, {'object_id': 'object'}),
+    'go_to_origin': Tool(motion, {}),
     'go_to_pose': Tool(motion, {'pose': 'pose'}),
     'pour': Tool(pouring, {'source': 'target', 'target': 'target'}),
     'pick_up': Tool(spoon, {'target': 'target'}),
@@ -36,10 +37,11 @@ def catalog(config):
         'target': {'type': 'object', 'properties': {'$ref': {'type': 'string'}},
                    'required': ['$ref'], 'additionalProperties': False,
                    'description': 'ID of an earlier localize step; resolved by the runtime.'},
-        'pose': {'type': 'object', 'properties': {key: {'type': 'number'} for key in
-                 ('x', 'y', 'z', 'o_x', 'o_y', 'o_z', 'theta')},
-                 'required': ['x', 'y', 'z', 'o_x', 'o_y', 'o_z', 'theta'],
-                 'additionalProperties': False},
+        'pose': {'type': 'object', 'properties': {
+                 **{key: {'type': 'number'} for key in ('x', 'y', 'z')},
+                 'yaw': {'type': 'number', 'minimum': -180, 'maximum': 180}},
+                 'required': ['x', 'y', 'z', 'yaw'], 'additionalProperties': False,
+                 'description': 'Task-frame position in mm and yaw in degrees, tool pointing down.'},
     }
     ready = implementations()
     return [dict(name=name, description=getattr(tool.module, name).__doc__,

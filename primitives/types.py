@@ -13,6 +13,15 @@ class Pose(TypedDict):
     theta: float
 
 
+# What go_to_pose takes: position in mm plus yaw in degrees about the task frame's
+# Z axis, with the tool pointing straight down. Targets still carry a full Pose.
+class PoseYaw(TypedDict):
+    x: float
+    y: float
+    z: float
+    yaw: float
+
+
 class Target(TypedDict):
     object_id: str
     frame: str

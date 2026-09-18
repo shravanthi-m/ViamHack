@@ -21,7 +21,8 @@ final candidate, and aggregate task findings into shared Markdown techniques.
 3. Compose a plan, or one self-contained plan per gated phase. JSON has exactly
    `version` (1), `instruction`, and `steps`; each step has `id`, `tool`, and `args`.
    Use unique identifier IDs. Pass targets as `{"$ref": "earlier_localize_id"}`.
-   Never invent poses; `go_to_pose` needs an explicitly supplied calibrated pose.
+   Never invent poses; `go_to_pose` needs an explicitly supplied calibrated
+   `x`/`y`/`z` in mm plus `yaw` in degrees, reached with the tool pointing down.
    Respect primitive pre/postconditions. Refresh localization when objects move
    and at a new phase; references do not carry between runtime invocations.
 4. Save drafts under `demos/` or a candidate skill revision, validate them, and run
