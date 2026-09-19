@@ -208,7 +208,12 @@ async def main():
         config = json.load(f)
 
     robot = await connect()
-    await robot.refresh()  # re-sync the resource list in case 'motion' wasn't in the initial snapshot
+    await robot.refresh()
+
+    names = robot.resource_names
+    motion_matches = [n for n in names if n.subtype == 'motion']
+    print('Resource names with subtype "motion":', motion_matches)
+    print('Total resources this connection sees:', len(names))
     ctx = Context(config=config, robot=robot)
     handle = Gripper.from_robot(robot, config['resources']['gripper'])
 
