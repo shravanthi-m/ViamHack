@@ -72,13 +72,18 @@ For this station's UFactory module, merge this block into the existing
   "force_control": "ufactory_atomic",
   "object_force_percent": {
     "coconut_water": 10,
-    "pitcher": 20
+    "pitcher": 20,
+    "honey": 10
   }
 }
 ```
 
 These are controller percentages supplied by the operator, not measured newtons.
 Add entries using configured object IDs when the team supplies their settings.
+The operator specified honey's pickup force as 10%. Include `honey` in the local
+`objects` list when adding its force entry. This setting alone does not supply a
+honey pickup trajectory or measured grasp geometry; a physical honey grasp has
+not yet been validated.
 Automatic replay requires a setting for every source before either stage can run;
 it uses this map instead of the saved teaching force. It preserves the historical
 recording and records the selected setting in run evidence. Missing, nonnumeric,

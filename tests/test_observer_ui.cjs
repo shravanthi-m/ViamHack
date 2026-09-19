@@ -250,3 +250,154 @@ test('scan requires a fresh live frame and configured vision', async () => {
   await vm.runInContext('refresh()', app.context);
   assert.equal(app.element('scan').disabled, false);
 });
+
+test('browser operator checks show the exact prompt after reload and send one bound answer', async () => {
+  const app = setup(); await settle();
+  app.state.demo = {enabled: true, active: true, status: 'waiting_operator', browser_gates: true,
+    gate_id: 'reset-held-state', prompt: 'Observed held object: empty, coconut_water, or pitcher?'};
+  await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('operator-form').hidden, false);
+  assert.equal(app.element('operator-prompt').textContent, app.state.demo.prompt);
+  assert.equal(app.element('operator-continue').disabled, false);
+  assert.ok(app.buttons.every(button => button.disabled));
+  let complete;
+  app.setHandler(() => new Promise(resolve => { complete = resolve; }));
+  app.element('operator-answer').value = 'empty';
+  app.element('operator-form').events.submit({preventDefault() {}});
+  app.element('operator-form').events.submit({preventDefault() {}});
+  assert.equal(app.posts.length, 1);
+  assert.deepEqual(app.posts[0], {route: '/api/operator', body: {gate_id: 'reset-held-state', answer: 'empty'}});
+  complete({ok: true, json: async () => ({ok: true})}); await settle();
+  assert.equal(app.element('operator-form').hidden, true);
+});
+
+test('abort sends q for the current operator check and disconnect hides checks', async () => {
+  const app = setup(); await settle();
+  app.state.demo = {enabled: true, active: true, status: 'waiting_operator', browser_gates: true,
+    gate_id: 'reset-clearance', prompt: 'Paths clear? Type yes:'};
+  await vm.runInContext('refresh()', app.context);
+  app.element('operator-abort').click(); await settle();
+  assert.deepEqual(app.posts[0], {route: '/api/operator', body: {gate_id: 'reset-clearance', answer: 'q'}});
+  app.disconnect(); await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('operator-form').hidden, true);
+  assert.equal(app.element('operator-continue').disabled, true);
+});
+
+test('stopped-task form requires inspection and sends a recovery bound to that failure', async () => {
+  const app = setup(); await settle();
+  app.state.demo = {enabled: true, active: false, status: 'failed', failure_id: 'failed-reset', failure_reason: 'Operator aborted.'};
+  await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('recovery-form').hidden, false);
+  assert.equal(app.element('recovery-reason').textContent, 'Operator aborted.');
+  assert.ok(app.buttons.every(button => button.disabled));
+  app.element('recovery-form').events.submit({preventDefault() {}}); await settle();
+  assert.equal(app.posts.length, 0);
+  app.element('recovery-held').value = 'empty';
+  app.element('recovery-inspected').checked = true;
+  app.setHandler(async () => {
+    app.state.demo = {enabled: true, active: false, status: 'idle', reset_required: true};
+    return {ok: true, json: async () => ({reset_required: true, message: 'Run Reset first.'})};
+  });
+  app.element('recovery-form').events.submit({preventDefault() {}}); await settle();
+  assert.deepEqual(app.posts[0], {route: '/api/recover', body: {failure_id: 'failed-reset', held: 'empty', inspected: true}});
+  assert.equal(app.element('recovery-form').hidden, true);
+  assert.equal(app.buttons[0].disabled, true);
+  assert.equal(app.buttons[1].disabled, false);
+  assert.equal(app.element('request-status').textContent, 'RESET REQUIRED');
+});
+
+test('failed recovery keeps the stopped form available and never submits a task', async () => {
+  const app = setup(); await settle();
+  app.state.demo = {enabled: true, active: false, status: 'failed', failure_id: 'failed-reset'};
+  await vm.runInContext('refresh()', app.context);
+  app.element('recovery-held').value = 'empty';
+  app.element('recovery-inspected').checked = true;
+  app.setHandler(async () => ({ok: false, json: async () => ({error: 'Arm still moving'})}));
+  app.element('recovery-form').events.submit({preventDefault() {}}); await settle();
+  assert.equal(app.element('recovery-status').textContent, 'Arm still moving');
+  assert.equal(app.element('recovery-form').hidden, false);
+  assert.ok(app.buttons.every(button => button.disabled));
+  assert.equal(app.posts.length, 1);
+  app.disconnect(); await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('recovery-form').hidden, true);
+});
+
+test('successful completion clears old feedback and permits the next task without reloading', async () => {
+  const app = setup(); await settle();
+  app.state.demo = {enabled: true, active: true, task: 'reset', status: 'waiting_operator',
+    gate_id: 'final-check', prompt: 'Arm at home and empty? Type yes:', browser_gates: true};
+  await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('operator-form').hidden, false);
+  assert.ok(app.buttons.every(button => button.disabled));
+  app.element('draft-text').hidden = false;
+  app.element('draft-text').textContent = 'Reset station';
+  app.element('error').hidden = false;
+  app.state.demo = {enabled: true, active: false, task: 'reset', status: 'completed', gate_id: null};
+  await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('task-readiness').textContent, 'Reset complete · Ready for another task.');
+  assert.equal(app.element('request-status').textContent, 'READY FOR NEXT TASK');
+  assert.equal(app.element('operator-form').hidden, true);
+  assert.equal(app.element('draft-text').hidden, true);
+  assert.equal(app.element('error').hidden, true);
+  assert.ok(app.buttons.every(button => !button.disabled));
+  assert.equal(app.send.disabled, false);
+  app.setHandler(async () => {
+    app.state.demo = {enabled: true, active: true, task: 'signature', status: 'waiting_operator',
+      gate_id: 'pour-entry', prompt: 'Confirm entry', browser_gates: true};
+    return {ok: true, json: async () => ({intent: 'signature', status: 'waiting_operator', message: 'Confirm entry'})};
+  });
+  app.buttons[0].click(); await settle();
+  assert.equal(app.posts.at(-1).body.text, 'Claudia, help pour a drink');
+  assert.equal(app.element('request-status').textContent, 'WAITING FOR OPERATOR');
+  assert.equal(app.element('operator-prompt').textContent, 'Confirm entry');
+  assert.ok(app.buttons.every(button => button.disabled));
+});
+
+test('completion waits for worker cleanup and the final operator check stays required', async () => {
+  const app = setup(); await settle();
+  app.state.demo = {enabled: true, active: true, task: 'signature', status: 'waiting_operator',
+    gate_id: 'final-outcome', prompt: 'Pour outcome confirmed? Type yes:', browser_gates: true};
+  await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('task-readiness').textContent, 'Waiting for your operator check.');
+  assert.ok(app.buttons.every(button => button.disabled));
+  app.state.demo = {enabled: true, active: true, task: 'signature', status: 'completed'};
+  await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('request-status').textContent, 'FINISHING TASK');
+  assert.ok(app.buttons.every(button => button.disabled));
+  app.state.demo.active = false;
+  await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('task-readiness').textContent, 'Signature pour complete · Ready for another task.');
+  assert.ok(app.buttons.every(button => !button.disabled));
+});
+
+test('old completion does not overwrite an error starting the next task', async () => {
+  const app = setup(); await settle();
+  app.state.demo = {enabled: true, active: false, task: 'reset', status: 'completed'};
+  await vm.runInContext('refresh()', app.context);
+  app.setHandler(async () => ({ok: false, json: async () => ({error: 'Execution package changed'})}));
+  app.buttons[0].click(); await settle();
+  await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('request-status').textContent, 'REQUEST NOT CONFIRMED');
+  assert.equal(app.element('reply').textContent, 'Execution package changed');
+  assert.equal(app.element('error').hidden, false);
+});
+
+test('continue recovery dispatches only Reset and preserves its operator gates', async () => {
+  const app = setup(); await settle();
+  app.state.demo = {enabled: true, status: 'idle', active: false, reset_required: true};
+  await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('recovery-next').hidden, false);
+  assert.equal(app.element('continue-reset').disabled, false);
+  assert.equal(app.buttons[0].disabled, true);
+  app.setHandler(async () => {
+    app.state.demo = {enabled: true, status: 'waiting_operator', active: true, task: 'reset', reset_required: true,
+      gate_id: 'recovery-held-check', browser_gates: true, prompt: 'Observed held object?'};
+    return {ok: true, json: async () => ({intent: 'reset', status: 'waiting_operator', message: 'Observed held object?'})};
+  });
+  app.element('continue-reset').click(); await settle();
+  assert.deepEqual(app.posts[0], {route: '/api/request', body: {text: 'Reset station', review_only: false}});
+  assert.equal(app.element('recovery-next').hidden, true);
+  assert.equal(app.element('operator-form').hidden, false);
+  assert.equal(app.element('operator-prompt').textContent, 'Observed held object?');
+  assert.equal(app.posts.length, 1);
+});

@@ -4,6 +4,9 @@ let state = null, frameId = null, busy = false, connected = false;
 let liveSession = null, heartbeatAt = 0, refreshing = false, showingDemo = false;
 let errorTimer = null, liveRetryAt = 0, liveStartError = null;
 let scanning = false, scanSession = null;
+let operatorGate = null, operatorSending = false;
+let recoveryId = null, recovering = false;
+let completionShown = false;
 const taskButtons = document.querySelectorAll('[data-task]');
 
 function fail(message) {
@@ -22,12 +25,17 @@ async function post(route, body = {}) {
   return result;
 }
 function controls() {
-  const taskBlocked = !connected || busy || !!state?.demo?.active;
-  taskButtons.forEach(button => { button.disabled = taskBlocked; });
+  const taskBlocked = !connected || busy || !!state?.demo?.active || state?.demo?.status === 'failed';
+  taskButtons.forEach(button => { button.disabled = taskBlocked || (!!state?.demo?.reset_required && button.dataset.task !== 'reset'); });
   document.querySelector('#request-form button[type="submit"]').disabled = taskBlocked;
+  $('continue-reset').disabled = taskBlocked || !state?.demo?.reset_required;
   $('scan').disabled = taskBlocked || !state?.vision_configured || !state?.live?.active
     || !state.live.frames || state.live.frame_age_s == null || state.live.frame_age_s > 3;
   $('scan').textContent = scanning ? 'Scanning…' : 'Scan objects';
+  const gateBlocked = !connected || operatorSending || !state?.demo?.gate_id;
+  $('operator-continue').disabled = $('operator-abort').disabled = gateBlocked;
+  $('recovery-clear').disabled = !connected || busy || recovering || !!state?.demo?.active || !state?.demo?.failure_id;
+  $('recovery-clear').textContent = recovering ? 'Checking station…' : 'Clear stopped task';
 }
 async function action(callback) {
   if (busy || !connected) return;
@@ -159,16 +167,55 @@ async function refresh() {
     }
     connected = true;
     const demo = state.demo || {};
+    const taskName = {signature: 'Signature pour', reset: 'Reset', shake: 'Shake'}[demo.task] || 'Task';
+    $('recovery-next').hidden = !demo.reset_required || demo.active || demo.status === 'failed';
+    const complete = demo.status === 'completed' && !demo.active;
+    if (!complete) completionShown = false;
+    const newCompletion = complete && !completionShown;
+    $('task-readiness').textContent = demo.status === 'failed'
+      ? 'Task stopped · Clear the stopped task before continuing.'
+      : demo.active
+        ? demo.status === 'waiting_operator' ? 'Waiting for your operator check.'
+          : demo.status === 'completed' ? 'Finishing the task…' : `${taskName} is running…`
+        : demo.reset_required ? 'Ready for Reset.'
+        : complete ? `${taskName} complete · Ready for another task.` : 'Ready · Choose a task.';
+    $('recovery-form').hidden = demo.status !== 'failed' || !demo.failure_id;
+    if (recoveryId !== demo.failure_id) {
+      recoveryId = demo.failure_id;
+      $('recovery-held').value = '';
+      $('recovery-inspected').checked = false;
+      $('recovery-status').textContent = '';
+    }
+    $('recovery-reason').textContent = demo.failure_reason || 'The routine stopped. Inspect the station before starting a fresh task.';
     $('station-mode').textContent = demo.enabled ? 'SUPERVISED ROBOT MODE' : 'PREVIEW MODE';
     $('mode-note').textContent = demo.enabled
-      ? 'Fixed tasks · Operator checks in the terminal. Shake starts and finishes holding.'
+      ? 'Real arm actions enabled · Complete operator checks here. Shake starts and finishes holding.'
       : 'Preview mode · No robot motion. Start supervised mode to execute fixed tasks.';
-    if (showingDemo) {
+    if (demo.reset_required) $('mode-note').textContent = 'Reset is required before another Pour or Shake. Complete Reset with the observed held state.';
+    $('operator-form').hidden = !demo.gate_id;
+    if (operatorGate !== demo.gate_id) {
+      operatorGate = demo.gate_id;
+      $('operator-answer').value = '';
+      $('operator-status').textContent = '';
+    }
+    $('operator-prompt').textContent = demo.prompt || '';
+    if (!busy && newCompletion) {
+      completionShown = true;
+      showingDemo = false;
+      $('error').hidden = true;
+      $('draft-text').hidden = true;
+      $('draft-text').textContent = '';
+      $('operator-answer').value = '';
+      $('operator-status').textContent = '';
+    }
+    if ((!busy || demo.active) && (showingDemo || demo.active || (demo.enabled && demo.status !== 'idle' && (!complete || newCompletion)))) {
       const progress = {
-        waiting_operator: ['WAITING FOR OPERATOR', 'Claudia is waiting for the operator’s check in the terminal.'],
+        waiting_operator: ['WAITING FOR OPERATOR', demo.browser_gates ? 'Complete the operator check above to continue.' : 'Claudia is waiting for the operator’s check in the terminal.'],
         running: ['TASK RUNNING', 'Claudia is running the selected fixed task.'],
-        completed: ['ROUTINE COMPLETE', 'Fixed task outcome confirmed by the operator.'],
-        failed: ['TASK STOPPED', 'Operator inspection and station reset required.'],
+        completed: complete
+          ? ['READY FOR NEXT TASK', `${taskName} completed and outcome confirmed. Choose another task above.`]
+          : ['FINISHING TASK', 'Waiting for the routine to finish cleanup.'],
+        failed: ['TASK STOPPED', demo.failure_reason || 'Inspect the station and use Clear stopped task above.'],
       }[demo.status];
       if (progress) {
         $('request-status').textContent = progress[0];
@@ -187,8 +234,54 @@ async function refresh() {
     $('live-scene').removeAttribute('src');
     liveSession = null;
     clearScan();
+    $('operator-form').hidden = true;
+    $('recovery-form').hidden = true;
+    $('recovery-next').hidden = true;
+    $('task-readiness').textContent = 'Disconnected · Waiting for task status.';
   } finally {
     refreshing = false;
+    controls();
+  }
+}
+async function clearStoppedTask() {
+  const failureId = state?.demo?.failure_id;
+  const held = $('recovery-held').value;
+  if (!failureId || busy || recovering || !connected) return;
+  if (!$('recovery-inspected').checked || !['empty', 'coconut_water', 'pitcher'].includes(held)) {
+    $('recovery-status').textContent = 'Select the observed held state and confirm your inspection first.';
+    return;
+  }
+  await action(async () => {
+    recovering = true;
+    controls();
+    $('recovery-status').textContent = 'Reading the arm and gripper. No motion is commanded.';
+    try {
+      const result = await post('/api/recover', {failure_id: failureId, held, inspected: true});
+      showingDemo = false;
+      $('request-status').textContent = result.reset_required ? 'RESET REQUIRED' : 'READY FOR A FRESH TASK';
+      $('reply').textContent = result.message;
+      $('error').hidden = true;
+    } catch (error) {
+      $('recovery-status').textContent = error.message;
+      throw error;
+    } finally { recovering = false; }
+  });
+}
+async function answerOperator(value) {
+  const gate = state?.demo?.gate_id;
+  if (!connected || operatorSending || !gate || !value.trim()) return;
+  operatorSending = true;
+  controls();
+  try {
+    await post('/api/operator', {gate_id: gate, answer: value.trim()});
+    // Keep the old check disabled until the next server state arrives.
+    if (state.demo.gate_id === gate) state.demo.gate_id = null;
+    $('operator-status').textContent = 'Answer received.';
+  } catch (error) {
+    $('operator-status').textContent = error.message;
+  } finally {
+    operatorSending = false;
+    await refresh();
     controls();
   }
 }
@@ -201,6 +294,7 @@ async function submitRequest(text, task = null) {
     try {
       const result = await post('/api/request', {text, review_only: false});
       showingDemo = ['signature', 'reset', 'shake'].includes(result.intent) && result.status === 'waiting_operator';
+      if (showingDemo) completionShown = false;
       const unsupported = result.intent === 'unsupported' || result.intent === 'scene';
       $('request-status').textContent = unsupported ? 'TASK NOT CONNECTED'
         : result.status === 'preview' ? 'PREVIEW · NO ROBOT MOTION'
@@ -220,6 +314,12 @@ async function submitRequest(text, task = null) {
   });
 }
 $('request-form').addEventListener('submit', event => { event.preventDefault(); submitRequest($('request').value); });
+$('operator-form').addEventListener('submit', event => { event.preventDefault(); answerOperator($('operator-answer').value); });
+$('operator-abort').addEventListener('click', () => answerOperator('q'));
+$('recovery-form').addEventListener('submit', event => { event.preventDefault(); clearStoppedTask(); });
+$('continue-reset').addEventListener('click', () => {
+  if (!$('continue-reset').disabled) submitRequest('Reset station', 'reset');
+});
 taskButtons.forEach(button => button.addEventListener('click', () => submitRequest(button.dataset.prompt, button.dataset.task)));
 $('scan').addEventListener('click', scanObjects);
 $('scan-image').addEventListener('error', () => {

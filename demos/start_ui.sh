@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run in an interactive operator terminal for supervised execution.
+# Supervised execution presents the existing operator checks on the webpage.
 set -eu
 mode=${1:---preview}
 if [ "$#" -gt 1 ]; then

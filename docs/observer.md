@@ -79,17 +79,25 @@ OPENROUTER_STT_MODEL=openai/whisper-1
 The `/api/scan` endpoint sends the selected image to OpenRouter and the selected model
 provider. The key never reaches the browser. The default model supports image
 inputs and JSON schema responses; it can be changed through the environment.
-The default scan vocabulary is the demo's coconut carton, pitcher and cup. Pass
-`--objects id,id,...` to select a different subset of configured objects.
+The default scan vocabulary is the demo's coconut carton, pitcher, cup and the
+display-only shaker and honey bottle. Honey recognition uses the reference bottle's
+yellow cap, tall dark amber/brown body and ribbed sides; it boxes the whole visible
+bottle. Pass `--objects id,id,...` to select a different subset of configured objects
+or the display-only `shaker` and `honey` labels.
 
-The response contains normalized image boxes, allowed object IDs, qualitative
-visibility and a summary. Local validation rejects invalid boxes, unexpected
-fields, duplicate identities and incomplete responses. Empty detection lists are
-valid. Boxes are approximate model output, not measured geometry. New images clear
-old detections, and results are tied to the analyzed frame.
+The display model fills one nullable slot per allowed object ID. Absent objects
+and identities with multiple indistinguishable instances are omitted, so other
+identifiable objects can still be shown. Unknown labels, repeated identity slots
+and conflicting labels for the same object are also omitted without aborting.
+The API response contains normalized image boxes, allowed object IDs, qualitative
+visibility and a summary of the displayed objects. Local validation rejects
+invalid boxes, malformed response structures and incomplete responses. Empty
+detection lists are valid. Boxes are approximate model output, not measured
+geometry. New images clear old detections, and results are tied to the analyzed frame.
 
-The detector is shared with the implemented `localize` primitive, which remains
-blocked on this station's measured object profiles and calibration:
+The display scanner has a separate detector version from the implemented
+`localize` primitive; existing localization profiles cannot use display results.
+Robot localization remains blocked on this station's measured object profiles and calibration:
 the saved overhead homography reports 27.01 mm mean / 67.85 mm worst error, maps only
 the calibrated plane, and does not supply object height or grasp orientation.
 Bounding-box centers, model confidence and typed poses cannot fill those gaps.
@@ -102,7 +110,7 @@ See [the exact remaining demo and localization checklist](openrouter_demo_checkl
 
 - **Pour signature drink** requests coconut pour → carton return → pitcher pour →
   pitcher return through the existing supervised routine.
-- **Reset** asks the terminal operator to identify an empty hand, coconut carton,
+- **Reset** asks the operator on the webpage to identify an empty hand, coconut carton,
   or pitcher. It returns an identified held object to its taught place, gates
   release on observed support, then returns home empty. Unknown objects block it.
 - **Shake held object** shakes a securely side-gripped, sealed, already lifted
@@ -114,14 +122,12 @@ starting conditions, and launch commands are in [Fixed demo tasks](fixed_tasks.m
 Unsupported custom tasks display **TASK NOT CONNECTED** and preserve the text for
 editing. Preview mode describes each task without moving the robot. Amount control,
 shaker finding/pickup/return, and extra actions remain unsupported.
-Voice controls, scene-analysis controls, recipe details, and the activity timeline
-are no longer part of the page. The backend endpoints are unchanged.
+The page provides on-demand object scanning and operator checks alongside task controls.
 
 ## Enable supervised execution
 
 For an authorized physical show run, prepare and rehearse a new frozen pack after
-source changes as described in [the Script 1 runbook](demo1_runbook.md). In an
-interactive operator terminal, start:
+source changes as described in [the Script 1 runbook](demo1_runbook.md). Start:
 
 ```sh
 .venv/bin/python -m runtime --config config/local.json observer \
@@ -130,17 +136,35 @@ interactive operator terminal, start:
 
 Use the exact pack path you prepared; the example directory must already exist.
 The header reads **SUPERVISED ROBOT MODE**. Each task uses the exact pack/config
-and terminal entry gates. For Signature, the first confirmation checks intent, saved home, empty
+and operator entry gates on the webpage. For Signature, the first confirmation checks intent, saved home, empty
 hand, fixed cup, free-drive off, and clear paths before connecting. All existing
-placement measurements, grasp, support/release, and outcome gates remain in the
-terminal. The configured `ufactory_atomic` adapter closes automatically using
+placement measurements, grasp, support/release, and outcome gates appear in an
+**Operator check** form above the task buttons. Enter the requested answer and
+press **Continue**, or choose **Abort task**. Each answer is bound to the current
+check; stale and duplicate submissions cannot advance another check. The configured `ufactory_atomic` adapter closes automatically using
 [per-object settings](configuration.md#automatic-closure-and-object-settings);
 without that opt-in, operator-entered recordings require manual closure. This is
 a supervised routine, not an unattended one-command pour.
 
-The task feedback follows this request and shows when Claudia is waiting for the
-operator. Duplicate requests are blocked while
-a routine is active; failures require inspection/reset and a server restart.
+After the final outcome confirmation and worker cleanup, the page displays
+**Ready for another task**, clears the old task feedback, and re-enables task
+buttons and custom input without a reload. A task awaiting its final outcome
+confirmation is still active.
+
+The task feedback follows the current routine, including after a page reload,
+and shows when Claudia is waiting for the operator. A missing answer leaves the
+routine waiting; reconnecting does not auto-confirm any check. Duplicate requests are blocked while
+a routine is active. After a failure or operator abort, use **Clear stopped task**
+on the page: identify the held state and confirm that you inspected the station.
+The server checks fresh arm and gripper feedback without motion. It refuses a
+moving arm, mismatched/unknown held state, unavailable feedback, or changed pack.
+If loaded or away from home, only Reset is allowed until it completes. Otherwise
+you can select a fresh task. **Continue with Reset** starts the supervised recovery
+checks when Reset is required; it never resumes or repeats the interrupted pour.
+Predicted wrist/camera collisions are shown explicitly instead of a generic
+failure message. Collision-blocked motion needs path/geometry review before a
+fresh pour. The old run remains failed in its evidence files.
+There is no mid-routine resume; clearing never repeats or continues old steps.
 There are no automatic retries. Ctrl-C cancels the worker through the existing
 replay StopAll/connection-close path. Do not run another robot controller alongside
 this process; the station has no cross-process robot lock. No execution flag means
@@ -160,3 +184,7 @@ References: [OpenRouter image inputs](https://openrouter.ai/docs/guides/overview
 [model](https://openrouter.ai/qwen/qwen3-vl-30b-a3b-instruct).
 
 UI controller regression tests (offline): `node --test tests/test_observer_ui.cjs`.
+
+When upgrading/restarting an idle server that already requires recovery, preserve
+that restriction with `--require-reset`; only Reset will be accepted until its
+observed completion. Do not restart an active routine to clear its state.

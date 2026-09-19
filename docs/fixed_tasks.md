@@ -1,7 +1,8 @@
 # Fixed demo tasks
 
 The three website buttons share the same supervised handlers as the CLI scripts.
-An operator must keep the launching terminal open. Default launch/checks never
+The website presents operator checks in the browser; standalone scripts use the
+terminal. Keep the server running. Default launch/checks never
 connect for motion. These are candidates until rehearsed on the station.
 
 | Task | Required start | Behavior |
@@ -12,8 +13,12 @@ connect for motion. These are candidates until rehearsed on the station.
 
 Unknown objects cannot use Reset. After a shake, an operator must handle an object
 without a taught return (including the shaker). Never select pitcher/carton to
-reset a different object. Failure blocks further UI tasks until inspection/reset
-and a server restart. There are no automatic recovery attempts.
+reset a different object. Failure blocks further UI tasks until inspection and **Clear stopped task** on
+the page. Fresh read-only feedback must establish a stopped arm and agree with
+the selected held state. Loaded or non-home arms can only start Reset; completion
+then enables the other tasks. Unknown held objects require manual recovery.
+Clearing does not resume the old routine or command motion; there are no automatic
+recovery attempts.
 
 ## Prepare once after source/config edits stop
 
@@ -38,13 +43,13 @@ requests. The UI now detects an incompatible server and asks for a restart.
 # Preview only, with the overhead camera:
 sh demos/start_ui.sh
 
-# For an authorized physical run, from an interactive operator terminal:
+# For an authorized physical run, with operator checks on the webpage:
 sh demos/start_ui.sh --execute
 ```
 
 Open http://127.0.0.1:8765 and reload. Execution requires the header to say
-`SUPERVISED ROBOT MODE`. Choose a task and answer its terminal gates. For Reset,
-enter `empty`, `coconut_water`, or `pitcher`. Type `q` to abort a gate.
+`SUPERVISED ROBOT MODE`. Choose a task and answer the Operator check form above the buttons. For Reset,
+enter `empty`, `coconut_water`, or `pitcher`. Use Abort task (or enter `q`) to abort a gate.
 Do not run CLI tasks alongside an executing website.
 
 ## Standalone scripts
@@ -55,7 +60,7 @@ sh demos/fixed_tasks.sh signature --check
 sh demos/fixed_tasks.sh reset --check
 sh demos/fixed_tasks.sh shake --check
 
-# Physical runs; each retains the same terminal gates as the website:
+# Physical runs; the same operator checks are presented in the terminal:
 sh demos/fixed_tasks.sh signature --execute
 sh demos/fixed_tasks.sh reset --execute
 sh demos/fixed_tasks.sh shake --execute

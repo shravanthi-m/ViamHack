@@ -10,12 +10,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 
-from primitives.vision import MAX_IMAGE_BYTES, image_info, observe, credentials, validate_observation
+from primitives.vision import MAX_IMAGE_BYTES, image_info, credentials, validate_observation
 from primitives import localization
 from .observer_audio import transcribe
 from .observer_demo import ClaudiaDemo
 from .observer_live import LiveFeed
-from .observer_vision import select_objects
+from .observer_vision import observe, select_objects
 
 WEB = Path(__file__).with_name('observer_web')
 
@@ -281,6 +281,11 @@ def handler(observer):
                     result = observer.scan()
                 elif self.path == '/api/request':
                     result = observer.demo.request(body.get('text'), review_only=body.get('review_only', False))
+                elif self.path == '/api/operator':
+                    result = observer.demo.answer(body.get('gate_id'), body.get('answer'))
+                elif self.path == '/api/recover':
+                    result = asyncio.run(observer.demo.clear_failure(
+                        body.get('failure_id'), body.get('held'), body.get('inspected')))
                 elif self.path == '/api/transcribe':
                     encoded = body.get('data', '')
                     if not isinstance(encoded, str):
@@ -304,7 +309,8 @@ def serve(args, config):
     if args.view:
         resolve(config, args.view)
     demo = ClaudiaDemo(pack=args.demo_pack, config_path=args.config,
-                       enabled=args.enable_demo_execution)
+                       enabled=args.enable_demo_execution, browser_gates=True)
+    demo.reset_required = getattr(args, 'require_reset', False)
     observer = Observer(config, image=args.image, run=args.run, view=args.view, demo=demo,
                         objects=args.objects, observation=args.observation)
     server = ThreadingHTTPServer(('127.0.0.1', args.port), handler(observer))

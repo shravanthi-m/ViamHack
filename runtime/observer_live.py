@@ -11,7 +11,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from primitives.camera import resolve, kind_of, captured_at
-from primitives.vision import image_info, observe, credentials
+from primitives.vision import image_info, credentials
+from .observer_vision import observe
 from .connection import connect
 
 FPS = 5

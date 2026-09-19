@@ -28,18 +28,26 @@ def observation():
         {'object_id': 'cup', 'bbox': [0.2, 0.3, 0.5, 0.8], 'visibility': 'clear', 'note': 'Side visible.'}]}
 
 
+def display_response():
+    return {'summary': 'One visible cup; no pitcher.', 'objects': {
+        'cup': {'bbox': [200, 300, 500, 800], 'visibility': 'clear', 'note': 'Side visible.'},
+        'pitcher': None}}
+
+
 class VisionTests(unittest.TestCase):
-    def test_shaker_is_a_distinct_display_label_without_changing_task_objects(self):
+    def test_extra_display_labels_do_not_change_task_objects(self):
         config = copy.deepcopy(CONFIG)
-        self.assertEqual(select_objects(config), ['pitcher', 'cup', 'shaker'])
-        self.assertNotIn('shaker', config['objects'])
-        self.assertEqual(select_objects(config, 'shaker,pitcher'), ['shaker', 'pitcher'])
-        value = observation()
-        value['detections'].append({'object_id': 'shaker', 'bbox': [.6, .1, .9, .7],
-                                    'visibility': 'clear', 'note': 'Capped metal bottle.'})
-        result = validate_observation(value, select_objects(config))
-        self.assertEqual(result['detections'][1]['object_id'], 'shaker')
-        self.assertFalse(result['motion_ready'])
+        self.assertEqual(select_objects(config), ['pitcher', 'cup', 'shaker', 'honey'])
+        for identity in ('shaker', 'honey'):
+            with self.subTest(identity=identity):
+                self.assertNotIn(identity, config['objects'])
+                self.assertEqual(select_objects(config, f'{identity},pitcher'), [identity, 'pitcher'])
+                value = observation()
+                value['detections'].append({'object_id': identity, 'bbox': [.6, .1, .9, .7],
+                                            'visibility': 'clear', 'note': 'Capped bottle.'})
+                result = validate_observation(value, select_objects(config))
+                self.assertEqual(result['detections'][1]['object_id'], identity)
+                self.assertFalse(result['motion_ready'])
 
     def test_valid_observation_never_becomes_a_target(self):
         result = validate_observation(observation(), CONFIG['objects'])
@@ -89,8 +97,7 @@ class VisionTests(unittest.TestCase):
     @patch.dict(os.environ, {'OPENROUTER_API_KEY': 'test-secret'})
     @patch('primitives.vision.urlopen')
     def test_openrouter_contract(self, remote):
-        raw = observation()
-        raw['detections'][0]['bbox'] = [200, 300, 500, 800]
+        raw = display_response()
         payload = {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(raw)}}]}
         remote.return_value = io.BytesIO(json.dumps(payload).encode())
         result = observe(IMAGE, CONFIG['objects'])
@@ -98,9 +105,76 @@ class VisionTests(unittest.TestCase):
         body = json.loads(request.data)
         self.assertTrue(body['provider']['require_parameters'])
         self.assertEqual(body['response_format']['type'], 'json_schema')
+        slots = body['response_format']['json_schema']['schema']['properties']['objects']
+        self.assertEqual(set(slots['required']), set(CONFIG['objects']))
+        self.assertFalse(slots['additionalProperties'])
+        self.assertEqual(slots['properties']['cup']['anyOf'][1], {'type': 'null'})
         self.assertTrue(body['messages'][0]['content'][1]['image_url']['url'].startswith('data:image/png;base64,'))
         self.assertEqual(request.get_header('Authorization'), 'Bearer test-secret')
         self.assertFalse(result['motion_ready'])
+        self.assertEqual(result['detections'], observation()['detections'])
+        self.assertEqual(result['detector_version'], 'display-slots-1000-v1')
+
+    @patch('runtime.observer_vision.api_json')
+    def test_ambiguous_identity_does_not_discard_other_objects(self, remote):
+        raw = display_response()
+        raw['summary'] = 'Cup identified. Multiple pitchers cannot be distinguished.'
+        remote.return_value = {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(raw)}}]}
+        result = observe(IMAGE, CONFIG['objects'], model='test')
+        self.assertEqual([item['object_id'] for item in result['detections']], ['cup'])
+        self.assertIn('Missing or ambiguous', result['summary'])
+        self.assertFalse(result['motion_ready'])
+
+    @patch('runtime.observer_vision.api_json')
+    def test_display_skips_unexpected_missing_and_repeated_slots(self, remote):
+        for content in (
+            json.dumps({'summary': '', 'objects': {'invented': None, 'cup': None}}),
+            json.dumps({'summary': '', 'objects': {'cup': None}}),
+            '{"summary":"","objects":{"cup":null,"cup":null,"pitcher":null}}',
+        ):
+            with self.subTest(content=content):
+                remote.return_value = {'choices': [{'finish_reason': 'stop', 'message': {'content': content}}]}
+                self.assertEqual(observe(IMAGE, CONFIG['objects'], model='test')['detections'], [])
+
+    @patch('runtime.observer_vision.api_json')
+    def test_repeated_and_unknown_identities_preserve_a_valid_detection(self, remote):
+        cup = json.dumps(display_response()['objects']['cup'])
+        content = ('{"summary":"Objects","objects":{"cup":' + cup
+                   + ',"pitcher":null,"pitcher":null,"unrecognized":{}}}')
+        remote.return_value = {'choices': [{'finish_reason': 'stop', 'message': {'content': content}}]}
+        result = observe(IMAGE, CONFIG['objects'], model='test')
+        self.assertEqual(result['detections'], observation()['detections'])
+
+    @patch('runtime.observer_vision.api_json')
+    def test_display_rejects_invalid_coordinates(self, remote):
+        for box in ([.2, .3, .5, .8], [200, 300, 1001, 800], [500, 300, 200, 800],
+                    [True, 300, 500, 800]):
+            with self.subTest(box=box):
+                raw = display_response()
+                raw['objects']['pitcher'] = {**raw['objects']['cup'], 'bbox': box}
+                remote.return_value = {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(raw)}}]}
+                with self.assertRaises(ValueError):
+                    observe(IMAGE, CONFIG['objects'], model='test')
+
+    @patch('runtime.observer_vision.api_json')
+    def test_display_omits_conflicting_labels_but_keeps_distinct_objects(self, remote):
+        raw = display_response()
+        raw['objects']['pitcher'] = copy.deepcopy(raw['objects']['cup'])
+        raw['objects']['shaker'] = {'bbox': [600, 100, 900, 700], 'visibility': 'clear', 'note': ''}
+        remote.return_value = {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(raw)}}]}
+        result = observe(IMAGE, ['cup', 'pitcher', 'shaker'], model='test')
+        self.assertEqual([item['object_id'] for item in result['detections']], ['shaker'])
+        self.assertIn('Missing or ambiguous', result['summary'])
+
+    @patch('runtime.observer_vision.api_json')
+    def test_empty_display_scene_is_valid(self, remote):
+        raw = {'summary': 'No identifiable objects.', 'objects': {'cup': None, 'pitcher': None}}
+        remote.return_value = {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(raw)}}]}
+        self.assertEqual(observe(IMAGE, CONFIG['objects'], model='test')['detections'], [])
+
+    def test_live_feed_uses_display_detector(self):
+        from runtime.observer_live import LiveFeed
+        self.assertIs(LiveFeed(CONFIG, None, CONFIG['objects']).detector, observe)
 
     @patch.dict(os.environ, {'OPENROUTER_API_KEY': 'test-secret'})
     @patch('primitives.vision.urlopen')
@@ -264,6 +338,28 @@ class HTTPTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             self.request('/api/request', {'text': 'pour a drink'}, 'https://unrelated.example')
         self.assertEqual(error.exception.code, 403)
+
+    def test_operator_answers_require_same_origin_and_forward_exact_gate(self):
+        with patch.object(self.observer.demo, 'answer', return_value={'ok': True}) as answer:
+            with self.assertRaises(HTTPError) as error:
+                self.request('/api/operator', {'gate_id': 'gate', 'answer': 'yes'}, 'https://unrelated.example')
+            self.assertEqual(error.exception.code, 403)
+            answer.assert_not_called()
+            with self.request('/api/operator', {'gate_id': 'gate', 'answer': 'empty'}) as response:
+                self.assertTrue(json.load(response)['ok'])
+            answer.assert_called_once_with('gate', 'empty')
+
+    def test_recovery_requires_same_origin_and_preserves_confirmation(self):
+        from unittest.mock import AsyncMock
+        with patch.object(self.observer.demo, 'clear_failure', AsyncMock(return_value={'ok': True})) as clear:
+            body = {'failure_id': 'failure-1', 'held': 'empty', 'inspected': True}
+            with self.assertRaises(HTTPError) as error:
+                self.request('/api/recover', body, 'https://unrelated.example')
+            self.assertEqual(error.exception.code, 403)
+            clear.assert_not_awaited()
+            with self.request('/api/recover', body) as response:
+                self.assertTrue(json.load(response)['ok'])
+            clear.assert_awaited_once_with('failure-1', 'empty', True)
 
     def test_upload_and_state_without_key_or_robot(self):
         import base64

@@ -36,7 +36,9 @@ def parser():
                           help='Camera view streamed automatically when the website opens (default: overhead)')
     observer.add_argument('--demo-pack', help='Exact frozen coconut/pitcher demo pack')
     observer.add_argument('--enable-demo-execution', action='store_true',
-                          help='Allow UI drink requests to launch the fixed replay with terminal operator gates')
+                          help='Allow UI task requests to execute with operator checks on the webpage')
+    observer.add_argument('--require-reset', action='store_true',
+                          help='Preserve a recovery block at startup: only supervised Reset may run until it completes')
     sub.add_parser('localization-status', help='Show measured localization prerequisites offline')
     vp = sub.add_parser('vision-demo-profile', help='Fit/check measured image offsets offline; no robot connection')
     vp.add_argument('object', choices=('coconut_water', 'pitcher'))

@@ -44,6 +44,35 @@
         </div>
         <div class="tasks panel">
           <div class="panel-heading"><h3>A little help from Claudia.</h3><span class="micro">YOUR TASKS</span></div>
+          <p id="task-readiness" class="helper" role="status" aria-live="polite">Connecting to task controls…</p>
+          <div id="recovery-next" class="operator-check" hidden>
+            <p class="eyebrow">CONTINUE RECOVERY</p>
+            <p>The stopped routine cannot resume midway. Return the identified object and reach home before starting a new task.</p>
+            <button id="continue-reset" class="button" type="button">Continue with Reset</button>
+            <p class="helper">The next checks confirm the held object, taught grip/orientation, and clear return path. This does not repeat the interrupted pour.</p>
+          </div>
+          <form id="recovery-form" class="operator-check" hidden>
+            <p class="eyebrow">STOPPED TASK</p>
+            <p id="recovery-reason"></p>
+            <label for="recovery-held">After inspecting the station, what is in the gripper?</label>
+            <select id="recovery-held" required>
+              <option value="">Choose the observed state…</option>
+              <option value="empty">Empty hand</option>
+              <option value="coconut_water">Coconut-water carton, in its taught grip</option>
+              <option value="pitcher">Pitcher, in its taught grip</option>
+            </select>
+            <label class="recovery-confirm"><input id="recovery-inspected" type="checkbox" required> I have inspected the stopped arm, held object, and workspace. Any spill or collision has been addressed.</label>
+            <button id="recovery-clear" class="button" type="submit">Clear stopped task</button>
+            <p class="helper">Checks arm and gripper feedback. Does not move the arm or resume the old routine. Unknown held objects need manual recovery.</p>
+            <p id="recovery-status" class="helper" role="status"></p>
+          </form>
+          <form id="operator-form" class="operator-check" hidden>
+            <p class="eyebrow">OPERATOR CHECK · REAL ARM ACTION</p>
+            <label id="operator-prompt" for="operator-answer"></label>
+            <input id="operator-answer" type="text" maxlength="500" autocomplete="off" placeholder="Enter the requested answer" required>
+            <div class="operator-actions"><button id="operator-continue" class="button" type="submit">Continue</button><button id="operator-abort" class="button" type="button">Abort task</button></div>
+            <p id="operator-status" class="helper" role="status"></p>
+          </form>
           <div class="task-list" aria-label="Predefined tasks">
             <button class="task-button signature" data-task="signature" data-prompt="Claudia, help pour a drink"><span class="task-number">01</span><span><strong>Pour signature drink</strong><small>Coconut water, then pitcher. Return each one.</small></span><span aria-hidden="true">↗</span></button>
             <button class="task-button" data-task="reset" data-prompt="Reset station"><span class="task-number">02</span><span><strong>Reset</strong><small>Identify held carton/pitcher or empty hand. Return home.</small></span><span aria-hidden="true">↗</span></button>
