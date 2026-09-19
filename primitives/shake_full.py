@@ -24,7 +24,7 @@ import json
 import math
 import os
 import time
-
+from viam.services.motion import MotionClient  # import BEFORE connecting
 from dotenv import load_dotenv
 from viam.robot.client import RobotClient
 from viam.components.arm import Arm
@@ -208,6 +208,12 @@ async def main():
         config = json.load(f)
 
     robot = await connect()
+    await robot.refresh()
+
+    names = robot.resource_names
+    motion_matches = [n for n in names if n.subtype == 'motion']
+    print('Resource names with subtype "motion":', motion_matches)
+    print('Total resources this connection sees:', len(names))
     ctx = Context(config=config, robot=robot)
     handle = Gripper.from_robot(robot, config['resources']['gripper'])
 
