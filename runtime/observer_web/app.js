@@ -5,7 +5,8 @@ let errorTimer = null, runSignature = null;
 let showingDemo = false;
 let recorder = null, recordingStream = null, recordingTimer = null, openingMic = false;
 let listening = false, recognizing = false, recognitionFailed = false, finalTranscript = '', selectedVoice = null;
-const names = {coconut_water: 'Coconut water', pitcher: 'Pitcher', coffee: 'Coffee', cup: 'Cup', spoon: 'Spoon'};
+let liveSession = null, liveResult = null, pendingIdentification = null, heartbeatAt = 0, refreshing = false;
+const names = {coconut_water: 'Coconut water', pitcher: 'Pitcher', coffee: 'Coffee', cup: 'Cup', spoon: 'Spoon', shaker: 'Shaker'};
 const human = value => names[value] || String(value || '').replaceAll('_', ' ');
 
 function fail(message) {
@@ -65,9 +66,14 @@ async function post(route, body = {}) {
 }
 function controls() {
   const inputActive = openingMic || listening || recognizing || !!recordingStream;
+  const live = !!state?.live?.active;
+  $('live-toggle').disabled = !live && (busy || inputActive || !state?.live_enabled);
+  $('live-toggle').textContent = live ? '■ Stop live view' : '▶ Start live view';
+  $('live-toggle').setAttribute('aria-pressed', String(live));
+  $('live-identify').disabled = live || !state?.vision_configured;
   $('capture').disabled = busy || inputActive || !state?.capture_enabled;
-  $('scan').disabled = busy || inputActive || !state?.frame || !state?.vision_configured;
-  $('upload').disabled = busy || inputActive;
+  $('scan').disabled = busy || inputActive || !(live ? state?.live?.observation : state?.frame) || !state?.vision_configured;
+  $('upload').disabled = busy || inputActive || live;
   $('scanline').hidden = !busy;
   $('mic').disabled = busy || openingMic || (!canRecord() && !recognition);
   document.querySelector('#request-form button[type="submit"]').disabled = busy || inputActive || !!state?.demo?.active;
@@ -80,9 +86,11 @@ async function action(callback) {
   finally { busy = false; await refresh(); controls(); }
 }
 function drawObservation() {
-  $('boxes').replaceChildren(); $('objects').replaceChildren();
-  const observation = state?.observation;
-  const matches = observation && observation.frame_id === frameId;
+  $('boxes').replaceChildren(); $('identified-boxes').replaceChildren(); $('objects').replaceChildren();
+  const live = !!state?.live?.active;
+  const observation = live ? liveResult : state?.observation;
+  const matches = observation && (live || observation.frame_id === frameId);
+  const boxes = live ? $('identified-boxes') : $('boxes');
   const items = matches ? observation.detections : [];
   $('object-count').textContent = matches ? String(items.length).padStart(2, '0') : '—';
   $('summary').textContent = matches ? observation.summary : '';
@@ -97,7 +105,7 @@ function drawObservation() {
     box.className = 'box' + (item.visibility === 'clear' ? '' : ' uncertain');
     Object.assign(box.style, {left: `${left * 100}%`, top: `${top * 100}%`, width: `${(right-left)*100}%`, height: `${(bottom-top)*100}%`});
     const label = document.createElement('span'); label.textContent = human(item.object_id); box.append(label);
-    box.title = item.note; $('boxes').append(box);
+    box.title = item.note; boxes.append(box);
     const pill = document.createElement('span'); pill.className = 'object-pill';
     pill.textContent = human(item.object_id);
     const visibility = document.createElement('small'); visibility.textContent = item.visibility;
@@ -106,7 +114,58 @@ function drawObservation() {
   const positions = matches ? Object.values(observation.localization || {}) : [];
   $('position-status').textContent = positions.length
     ? positions.filter(item => item.status === 'target_estimated').length + ' measured targets / ' + positions.length + ' recognized objects. ' + (positions.find(item => item.status === 'blocked')?.reason || 'Operator scene checks still apply.')
-    : 'Grasp positions need measured object geometry.';
+    : live ? 'Live identification is approximate image labeling, not a measured grasp target.' : 'Grasp positions need measured object geometry.';
+}
+function renderLive() {
+  const live = state?.live || {};
+  const active = !!live.active;
+  const visible = active && !document.hidden;
+  if (visible && liveSession !== live.session) {
+    liveSession = live.session;
+    $('live-scene').src = '/api/live.mjpg?session=' + encodeURIComponent(liveSession);
+  } else if (!visible && liveSession) {
+    $('live-scene').removeAttribute('src');
+    liveSession = null;
+  }
+  $('live-scene').hidden = !visible;
+  $('image-wrap').hidden = active || !state?.frame;
+  $('empty-state').hidden = active || !!state?.frame;
+  const result = active ? live.observation : null;
+  if (!active) {
+    liveResult = null; pendingIdentification = null;
+    $('identified-scene').hidden = true;
+  } else if (result && result.frame_id !== pendingIdentification && result.frame_id !== liveResult?.frame_id) {
+    pendingIdentification = result.frame_id;
+    // Commit boxes only after the EXACT corresponding image loads successfully.
+    const candidate = {...result, receivedMs: Date.now() - result.age_s * 1000};
+    const image = $('identified-scene');
+    liveResult = null; image.hidden = true;
+    image.onload = () => {
+      if (!state?.live?.active || pendingIdentification !== candidate.frame_id) return;
+      liveResult = candidate; image.hidden = false;
+      drawObservation();
+    };
+    image.onerror = () => { pendingIdentification = null; image.hidden = true; };
+    image.src = '/api/live/identified?id=' + encodeURIComponent(result.frame_id);
+  }
+  $('identified-panel').hidden = !active || !result;
+  $('identified-age').textContent = liveResult
+    ? `· FRAME ${Math.max(0, Math.round((Date.now() - liveResult.receivedMs) / 1000))}s AGO · ${liveResult.latency_s}s ANALYSIS`
+    : '· LOADING MATCHED FRAME';
+  const camera = live.status === 'connecting' ? 'Connecting to camera…' : active
+    ? `${live.fps || 0} fps · ${live.frame_age_s ?? '—'}s since latest frame` : 'Live view is off.';
+  const analysis = live.identify ? (live.analyzing ? ' · Identifying objects…' : ' · Automatic identification on') : ' · Identification off';
+  $('live-status').textContent = live.error || (camera + (active ? analysis : '') + (active && live.analysis_error ? ' · ' + live.analysis_error : ''));
+  if (active) {
+    const stale = live.frame_age_s !== null && live.frame_age_s > 3;
+    $('image-status').textContent = live.status === 'connecting' ? 'CONNECTING' : stale ? 'CAMERA DELAYED' : 'LIVE CAMERA';
+    $('source-label').textContent = (state.view || 'Station') + ' · LIVE';
+    $('age-label').textContent = live.captured_at ? 'FRAME ' + new Date(live.captured_at).toLocaleTimeString() : 'WAITING FOR CAMERA';
+  }
+  if (visible && Date.now() - heartbeatAt > 5000) {
+    heartbeatAt = Date.now();
+    post('/api/live/heartbeat', {session: live.session}).catch(() => {});
+  }
 }
 function renderRun(run) {
   const signature = JSON.stringify(run);
@@ -131,6 +190,8 @@ function renderRun(run) {
   }
 }
 async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
   try {
     const response = await fetch('/api/state');
     if (!response.ok) throw new Error('Varista is unavailable');
@@ -165,17 +226,20 @@ async function refresh() {
         ? 'Tap to talk, tap to finish. Audio goes to OpenRouter. Drink requests need review and send.'
         : recognition ? 'Tap to talk. Uses your browser’s speech service. Drink requests need review and send.' : 'Voice input is unavailable. Type to chat with Claudia.';
     }
-    drawObservation(); renderRun(state.run); controls();
+    renderLive(); drawObservation(); renderRun(state.run); controls();
   } catch (_) {
     $('image-status').textContent = 'VARISTA DISCONNECTED';
     $('capture').disabled = true; $('scan').disabled = true;
     $('run-status').textContent = 'Connection lost · activity may be stale';
     runSignature = null;
+    $('live-status').textContent = 'Connection lost. Live frames and identification may be stale.';
+  } finally {
+    refreshing = false;
   }
 }
 async function scan() {
   if (!state?.vision_configured) return say('Scene analysis needs an OpenRouter key. You can still load or capture an image.');
-  if (!state?.frame) return say('Let’s capture a snapshot or load a photo first.');
+  if (!state?.frame && !state?.live?.active) return say('Let’s capture a snapshot or load a photo first.');
   await action(async () => {
     say('Taking a closer look at this image.');
     const result = await post('/api/scan');
@@ -202,6 +266,18 @@ async function submitRequest(text, reviewOnly = false) {
 $('request-form').addEventListener('submit', event => { event.preventDefault(); submitRequest($('request').value); });
 document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => submitRequest(button.dataset.prompt)));
 $('capture').addEventListener('click', () => action(() => post('/api/capture')));
+$('live-toggle').addEventListener('click', async () => {
+  try {
+    if (state?.live?.active) await post('/api/live/stop');
+    else await post('/api/live/start', {identify: !!state?.vision_configured && $('live-identify').checked});
+    await refresh();
+  } catch (error) { fail(error.message); }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    $('live-scene').removeAttribute('src'); liveSession = null;
+  } else refresh();
+});
 $('scan').addEventListener('click', scan);
 $('upload').addEventListener('change', () => {
   const file = $('upload').files[0]; if (!file) return;
@@ -315,6 +391,7 @@ $('mic').addEventListener('click', () => {
   }
 });
 window.addEventListener('pagehide', () => {
+  $('live-scene').removeAttribute('src'); liveSession = null;
   recognitionFailed = true;
   if (recorder) recorder.onstop = null;
   stopRecording();
@@ -322,4 +399,8 @@ window.addEventListener('pagehide', () => {
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 });
 $('scene').addEventListener('error', () => fail('The image could not be displayed. Load a valid station photo.'));
-refresh(); setInterval(refresh, 2000);
+$('live-scene').addEventListener('error', () => {
+  liveSession = null;
+  $('image-status').textContent = 'RECONNECTING VIEW';
+});
+refresh(); setInterval(refresh, 1000);

@@ -8,12 +8,14 @@ import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
-from primitives.vision import MAX_IMAGE_BYTES, image_info, observe, credentials, select_objects, validate_observation
+from primitives.vision import MAX_IMAGE_BYTES, image_info, observe, credentials, validate_observation
 from primitives import localization
 from .observer_audio import transcribe
 from .observer_demo import ClaudiaDemo
+from .observer_live import LiveFeed
+from .observer_vision import select_objects
 
 WEB = Path(__file__).with_name('observer_web')
 
@@ -64,6 +66,7 @@ class Observer:
         self.config, self.run, self.view = config, run, view
         self.objects = select_objects(config, objects)
         self.demo = demo or ClaudiaDemo()
+        self.live = LiveFeed(config, view, self.objects)
         self.lock, self.operation = threading.Lock(), threading.Lock()
         self.frame, self.observation = None, None
         if image:
@@ -98,12 +101,14 @@ class Observer:
             run['mode'] = 'execute'
             if not run_directory:
                 run['status'] = 'failed' if demo['status'] == 'failed' else 'waiting'
-        return {'frame': frame, 'observation': observation, 'run': run, 'demo': demo,
+        live = self.live.state()
+        return {'frame': frame, 'observation': observation, 'run': run, 'demo': demo, 'live': live,
                 'vision_configured': bool(provider['OPENROUTER_API_KEY']),
                 'model': provider['OPENROUTER_VISION_MODEL'],
                 'stt_model': provider['OPENROUTER_STT_MODEL'],
                 'localization': localization.readiness(self.config),
-                'capture_enabled': self.view is not None and not demo['active'], 'view': self.view,
+                'capture_enabled': self.view is not None and not demo['active'] and not live['active'],
+                'live_enabled': self.view is not None and not demo['active'], 'view': self.view,
                 'objects': self.objects}
 
     async def capture(self):
@@ -115,6 +120,8 @@ class Observer:
             raise ValueError('Start with --view to enable station snapshots.')
         if self.demo.state()['active']:
             raise ValueError('Claudia is using the station. Wait for the routine to finish.')
+        if self.live.state()['active']:
+            raise ValueError('Stop live view before taking a separate snapshot.')
         robot = await connect()
         try:
             result = await capture(Context(self.config, robot), view=self.view)
@@ -129,6 +136,11 @@ class Observer:
             await asyncio.wait_for(robot.close(), 10)
 
     def scan(self):
+        live = self.live.state()
+        if live['active']:
+            if live['observation']:
+                return live['observation']
+            raise ValueError('Live identification has no result yet. Enable identification when starting live view, then wait for its first result.')
         with self.lock:
             frame = self.frame
         if frame is None:
@@ -139,6 +151,8 @@ class Observer:
         for item in result['detections']:
             identity = item['object_id']
             try:
+                if identity not in self.config['objects']:
+                    raise ValueError('Display-only object; no configured robot manipulation target.')
                 if not frame['captured_at'] or self.view is None:
                     raise ValueError('Saved/uploaded image: capture a fresh calibrated camera image for robot localization')
                 target = localization.target_from_observation(self.config, identity, result,
@@ -174,10 +188,45 @@ def handler(observer):
             return self.headers.get('Host') in (
                 f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}')
 
+        def stream(self, session):
+            live = observer.live.state()
+            if not live['active'] or live['session'] != session:
+                return self.respond({'error': 'Start live view first.'}, 409)
+            self.connection.settimeout(5)
+            self.send_response(200)
+            self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
+            self.end_headers()
+            previous = None
+            try:
+                while observer.live.state()['active'] and observer.live.session == session:
+                    frame = observer.live.next_frame(session, previous)
+                    if frame is None:
+                        continue
+                    previous = frame['id']
+                    data = frame['data']
+                    self.wfile.write(b'--frame\r\nContent-Type: image/jpeg\r\nContent-Length: '
+                                     + str(len(data)).encode() + b'\r\n\r\n' + data + b'\r\n')
+                    self.wfile.flush()
+            except (OSError, TimeoutError):
+                pass
+            self.close_connection = True
+
         def do_GET(self):
             if not self.valid_host():
                 return self.respond({'error': 'Use the local observer address.'}, 403)
             path = urlsplit(self.path).path
+            if path in ('/api/live.mjpg', '/api/live/identified'):
+                if self.headers.get('Sec-Fetch-Site') == 'cross-site':
+                    return self.respond({'error': 'Use the observer page.'}, 403)
+                query = parse_qs(urlsplit(self.path).query)
+                if path == '/api/live.mjpg':
+                    return self.stream(query.get('session', [''])[0])
+                data = observer.live.identified(query.get('id', [''])[0])
+                if data is None:
+                    return self.respond({'error': 'Identified frame expired.'}, 404)
+                return self.respond(data, mime='image/jpeg')
             if path == '/api/state':
                 return self.respond(observer.state())
             if path == '/api/frame':
@@ -189,7 +238,8 @@ def handler(observer):
             assets = {'/': ('index.html', 'text/html; charset=utf-8'),
                       '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                       '/style.css': ('style.css', 'text/css; charset=utf-8'),
-                      '/cafe-editorial.png': ('cafe-editorial.png', 'image/png')}
+                      '/cafe-editorial.png': ('cafe-editorial.png', 'image/png'),
+                      '/cafe-lifestyle.png': ('cafe-lifestyle.png', 'image/png')}
             if path in assets:
                 name, mime = assets[path]
                 return self.respond((WEB / name).read_bytes(), mime=mime)
@@ -201,7 +251,8 @@ def handler(observer):
                 return self.respond({'error': 'Use the observer page for this action.'}, 403)
             if self.headers.get('Content-Type') != 'application/json':
                 return self.respond({'error': 'JSON required.'}, 415)
-            if not observer.operation.acquire(blocking=False):
+            exclusive = self.path not in ('/api/live/stop', '/api/live/heartbeat')
+            if exclusive and not observer.operation.acquire(blocking=False):
                 return self.respond({'error': 'A snapshot or scan is still in progress.'}, 409)
             try:
                 size = int(self.headers.get('Content-Length', '0'))
@@ -210,7 +261,15 @@ def handler(observer):
                 body = json.loads(self.rfile.read(size))
                 if not isinstance(body, dict):
                     raise ValueError('Expected a JSON object.')
-                if self.path == '/api/image':
+                if self.path == '/api/live/start':
+                    if observer.demo.state()['active']:
+                        raise ValueError('Wait for the current routine to finish before starting live view.')
+                    result = observer.live.start(body.get('identify', True))
+                elif self.path == '/api/live/stop':
+                    result = observer.live.stop()
+                elif self.path == '/api/live/heartbeat':
+                    result = observer.live.heartbeat(body.get('session'))
+                elif self.path == '/api/image':
                     encoded = body.get('data', '')
                     if not isinstance(encoded, str):
                         raise ValueError('Invalid image data.')
@@ -235,7 +294,8 @@ def handler(observer):
             except Exception:
                 self.respond({'error': 'The observation failed. Check camera connectivity and local configuration.'}, 502)
             finally:
-                observer.operation.release()
+                if exclusive:
+                    observer.operation.release()
     return Handler
 
 
@@ -260,5 +320,6 @@ def serve(args, config):
         pass
     finally:
         server.server_close()
+        observer.live.close()
         demo.close()
         signal.signal(signal.SIGTERM, previous_term)

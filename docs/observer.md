@@ -20,8 +20,8 @@ For configured station snapshots and an existing run's events:
 ```
 
 `--view` must name a declared camera view. Capture snapshot connects only on click,
-reads an image, and closes its connection. Images are snapshots, not a live video
-stream. `--image PATH` can preload a saved JPEG, PNG or WebP. Uploads stay in
+reads an image, and closes its connection. Snapshot mode shows individual images. Use **Start live view** for the live feed
+described below. `--image PATH` can preload a saved JPEG, PNG or WebP. Uploads stay in
 memory; station captures use the camera primitive's normal ignored image directory.
 The observer binds only to localhost.
 
@@ -31,6 +31,52 @@ Mock logs are labeled MOCK RUN. Replay logs without an explicit mode are labeled
 RECORDED RUN; their files do not establish whether a robot is currently connected.
 Completed commands are displayed as reported run status, not independent proof of
 physical success. To attach a newly created run, restart with that exact directory.
+
+## Live camera and recurring identification
+
+Start with a configured camera view (no motion is enabled):
+
+```sh
+.venv/bin/python -m runtime --config config/local.json observer --view overhead
+```
+
+Click **Start live view**. The server keeps one read-only Viam camera connection and
+polls `get_images` at up to five frames per second, publishing a JPEG stream to the
+browser. Frames are resized within 960 × 720 and kept in bounded memory, not saved
+to disk. The actual FPS and frame age are displayed. Camera/network latency can
+reduce the rate; this is not a high-frame-rate WebRTC feed.
+
+**Identify objects automatically** sends sampled frames to the configured OpenRouter
+vision model. One analysis runs at a time, with a three-second pause after each
+result; slower model responses reduce the identification rate without blocking
+video. No backlog of camera frames is queued. The default labels are coconut water, pitcher, cup, and shaker (the capped metal
+bottle). Shaker is a presentation-only label: it does not change configured robot
+task objects or supply a manipulation target. `--objects` can select a subset of
+these display labels and the configured task objects.
+Uncheck identification before starting for video without model requests.
+
+The live image stays above **LATEST IDENTIFICATION**, which shows the exact sampled
+frame and its corresponding boxes, frame age, and measured analysis latency. The
+object list describes that analyzed frame, not guaranteed current positions. Boxes
+are never drawn over a newer live image. These observations do not establish
+localization, authorize motion, or become robot targets. Original snapshots and
+saved detections reappear after stopping live view.
+
+**Stop live view** closes camera acquisition promptly even during transcription or
+analysis. An already sent model request may finish, but its result is discarded.
+Restart waits for any in-flight analysis to finish, preventing overlapping requests.
+Camera failure ends the session with an error; model failure leaves video running
+and retries with a bounded delay. A hidden/closed page stops heartbeats; the camera
+and further model requests stop within 20 seconds unless another visible viewer
+keeps the shared session alive. Starting/stopping requires same-origin POSTs;
+loading a stream URL never initiates a camera connection.
+
+Offline verification: `python -m unittest discover -s tests -v` and
+`node --test tests/test_observer_voice.cjs`. Fake-camera tests cover streaming,
+slow/failed inference, matched frames, bounded history, disconnects, and cleanup.
+
+Implementation references: [Viam’s Python streaming approach](https://docs.viam.com/build-apps/tasks/stream-video/)
+and [OpenRouter image inputs](https://openrouter.ai/docs/guides/overview/multimodal/image-understanding).
 
 ## Optional scene understanding
 

@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from PIL import Image
 
 from runtime.observer import Observer, handler, read_run
-from runtime.observer_vision import image_type, observe, validate_observation
+from runtime.observer_vision import image_type, observe, validate_observation, select_objects
 from runtime.config import DEFAULT_CONFIG, read_json
 
 buffer = io.BytesIO()
@@ -29,6 +29,18 @@ def observation():
 
 
 class VisionTests(unittest.TestCase):
+    def test_shaker_is_a_distinct_display_label_without_changing_task_objects(self):
+        config = copy.deepcopy(CONFIG)
+        self.assertEqual(select_objects(config), ['pitcher', 'cup', 'shaker'])
+        self.assertNotIn('shaker', config['objects'])
+        self.assertEqual(select_objects(config, 'shaker,pitcher'), ['shaker', 'pitcher'])
+        value = observation()
+        value['detections'].append({'object_id': 'shaker', 'bbox': [.6, .1, .9, .7],
+                                    'visibility': 'clear', 'note': 'Capped metal bottle.'})
+        result = validate_observation(value, select_objects(config))
+        self.assertEqual(result['detections'][1]['object_id'], 'shaker')
+        self.assertFalse(result['motion_ready'])
+
     def test_valid_observation_never_becomes_a_target(self):
         result = validate_observation(observation(), CONFIG['objects'])
         self.assertFalse(result['motion_ready'])
@@ -151,6 +163,7 @@ class HTTPTests(unittest.TestCase):
         self.origin = f'http://127.0.0.1:{self.server.server_port}'
 
     def tearDown(self):
+        self.observer.live.close()
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()
@@ -162,7 +175,7 @@ class HTTPTests(unittest.TestCase):
 
     def test_serves_only_known_assets(self):
         with self.request('/') as response:
-            self.assertIn(b'Your robot bartender', response.read())
+            self.assertIn(b'Your robot barista', response.read())
         for path in ('/.env', '/../../.env', '/api/execute', '/config/local.json'):
             with self.subTest(path=path), self.assertRaises(HTTPError) as error:
                 self.request(path)
@@ -176,6 +189,56 @@ class HTTPTests(unittest.TestCase):
     def test_no_motion_endpoint(self):
         with self.assertRaises(HTTPError) as error:
             self.request('/api/execute', {'plan': 'anything'})
+        self.assertEqual(error.exception.code, 404)
+
+    def test_live_start_is_explicit_and_same_origin(self):
+        with patch.object(self.observer.live, 'start', return_value={'status': 'connecting'}) as start:
+            with self.assertRaises(HTTPError):
+                self.request('/api/live/start')
+            with self.assertRaises(HTTPError):
+                self.request('/api/live/start', {'identify': True}, 'https://unrelated.example')
+            start.assert_not_called()
+            with self.request('/api/live/start', {'identify': False}) as response:
+                self.assertEqual(json.load(response)['status'], 'connecting')
+            start.assert_called_once_with(False)
+
+    def test_live_stop_and_heartbeat_are_not_blocked_by_slow_operations(self):
+        live = self.observer.live
+        live.session = 'test-session'
+        live.stop_event.clear()
+        self.observer.operation.acquire()
+        try:
+            with self.request('/api/live/heartbeat', {'session': live.session}) as response:
+                self.assertTrue(json.load(response)['ok'])
+            with self.request('/api/live/stop', {}) as response:
+                self.assertFalse(json.load(response)['active'])
+        finally:
+            self.observer.operation.release()
+
+    def test_stream_emits_jpeg_and_never_starts_a_camera_on_get(self):
+        with self.assertRaises(HTTPError) as error:
+            self.request('/api/live.mjpg?session=inactive')
+        self.assertEqual(error.exception.code, 409)
+        self.assertIsNone(self.observer.live.thread)
+        live = self.observer.live
+        live.session = 'test-session'
+        live.stop_event.clear()
+        live._publish(IMAGE, '2026-09-19T15:00:00+00:00')
+        with self.request('/api/live.mjpg?session=test-session') as response:
+            self.assertIn('multipart/x-mixed-replace', response.headers['Content-Type'])
+            self.assertEqual(response.readline(), b'--frame\r\n')
+            self.assertEqual(response.readline(), b'Content-Type: image/jpeg\r\n')
+            size = int(response.readline().split(b':')[1])
+            self.assertEqual(response.readline(), b'\r\n')
+            self.assertEqual(response.read(size), live.frame['data'])
+            live.stop()
+
+    def test_identified_images_are_selected_by_exact_frame_id(self):
+        self.observer.live.identified_frames['exact'] = IMAGE
+        with self.request('/api/live/identified?id=exact') as response:
+            self.assertEqual(response.read(), IMAGE)
+        with self.assertRaises(HTTPError) as error:
+            self.request('/api/live/identified?id=expired')
         self.assertEqual(error.exception.code, 404)
 
     def test_claudia_request_previews_fixed_routine(self):
