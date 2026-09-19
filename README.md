@@ -3,6 +3,9 @@
 A robot arm that pours and prepares drinks using Viam and human-built primitives,
 composed and refined by an agent.
 
+For supervised hand-guided demonstrations and bounded grasp adaptation, see
+[Teach and replay](docs/teach_replay.md), including the coconut-water and pitcher commands.
+
 ## Table of contents
 
 - [Get started with an agent](#get-started-with-an-agent)

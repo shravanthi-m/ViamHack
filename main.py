@@ -4,6 +4,8 @@
     python main.py --teach-origin --execute # one time: measure the origin pose
     python main.py --execute                # home, then jog +20/+20, after confirming
     python main.py --dx 20 --dy 20 --yaw 0 --speed 10 --execute
+    python main.py --shake 5                # print the three shake steps, move nothing
+    python main.py --shake 5 --execute      # home, lift clear of the table, shake for 5 s
 
 Every run starts at the taught origin, so a commanded pose is always approached
 from one known state instead of wherever the arm was left. Both steps go through
@@ -19,6 +21,16 @@ Both steps are the primitives in primitives/motion.py; this script only orders
 them and reports what they observed. All Viam calls live inside those primitives.
 Offsets are measured from the pose the arm reaches after homing.
 
+--shake replaces the jog with a mid-air shake: home, lift straight up to a position
+clear of the table, then run the shake primitive there. Mid-air is measured from the
+taught origin rather than the middle of the calibrated box, because the origin is a
+pose the arm is known to reach, taught at the side-grip orientation shake needs to
+level; only its height changes. The box that shake will sweep is checked against the
+calibrated workspace before anything moves, so a lift that does not fit is refused in
+the dry run. shake is hold-to-hold: it starts and finishes holding the object and
+never grasps or releases, so the gripper must already hold whatever is being shaken.
+Use --allow-empty to shake an empty gripper, which turns that check off.
+
 The agent demo path (python -m runtime) is unchanged and remains the entry point
 for plans.
 """
@@ -31,13 +43,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from primitives import motion
+from primitives import motion, shake
 from primitives.types import Context
 
 ROOT = Path(__file__).resolve().parent
 LOCAL_CONFIG = ROOT / 'config/local.json'
 DEFAULT_ADDRESS = 'armfarm7-main.310sld03v2.viam.cloud'
 MAX_STEP_MM = 50.0        # This is a jog, not a transport move: refuse more.
+DEFAULT_LIFT_MM = 150.0   # Clear of the table, still well inside the taught reach.
+MAX_LIFT_MM = 400.0       # The workspace bounds the lift too; this bounds a typo.
 
 
 def parser():
@@ -54,6 +68,14 @@ def parser():
                                              else ROOT / 'config/demo.json'))
     cli.add_argument('--teach-origin', action='store_true',
                      help=f'Measure the origin pose and save it to {LOCAL_CONFIG.name}')
+    cli.add_argument('--shake', type=float, metavar='SECONDS',
+                     help='Instead of the jog: lift to a mid-air position above the origin '
+                          'and shake there for this many seconds')
+    cli.add_argument('--lift', type=float, default=DEFAULT_LIFT_MM, metavar='MM',
+                     help=f'Height of that mid-air position above the origin '
+                          f'(default: {DEFAULT_LIFT_MM:g})')
+    cli.add_argument('--allow-empty', action='store_true',
+                     help='Shake with nothing in the gripper: turns off the holding check')
     cli.add_argument('--execute', action='store_true', help='Actually move the arm')
     cli.add_argument('--address', default=os.environ.get('VIAM_MACHINE_ADDRESS', DEFAULT_ADDRESS))
     return cli
@@ -85,9 +107,15 @@ async def connect(address):
 
 def task_config(args):
     config = json.loads(Path(args.config).read_text())
+    settings = config.setdefault('primitive_settings', {})
     if args.speed is not None:
-        config.setdefault('primitive_settings', {}).setdefault('motion', {})['speed_deg_s'] = args.speed
+        settings.setdefault('motion', {})['speed_deg_s'] = args.speed
+    if args.allow_empty:
+        # Deliberate and per-run: the shake config on disk keeps requiring a held object.
+        settings.setdefault('shake', {})['require_holding'] = False
     motion.settings(config)  # Fail on bad tuning before connecting to anything.
+    if args.shake is not None:
+        shake.settings(config)
     return config
 
 
@@ -126,6 +154,72 @@ async def teach(args, ctx):
     print('Later runs plan to this pose through the motion service.')
 
 
+def midair(config, home, lift_mm):
+    """The mid-air pose `lift_mm` above `home`, with the box shake will sweep checked.
+
+    Only the height changes, so the pose keeps the orientation the origin was taught
+    at. The stroke's box is confirmed inside the calibrated workspace here, before
+    anything moves, rather than after the arm is already up there; shake checks it
+    again itself once the tool is levelled.
+    """
+    if not config['calibrated']:
+        raise SystemExit('A mid-air shake needs a calibrated workspace. Run: '
+                         'python -m runtime --config config/local.json calibrate --write')
+    centre = {**home, 'z': home['z'] + lift_mm}
+    tuning = shake.settings(config)
+    try:
+        shake.within_workspace({axis: centre[axis] for axis in ('x', 'y', 'z')},
+                               config, 'mid-air position')
+        ends = shake.swept_box(shake.level(centre), tuning, config)
+    except ValueError as refused:
+        raise SystemExit(f'{refused}\nLower --lift, or re-teach the origin.') from refused
+    return centre, tuning, ends
+
+
+async def home_and_shake(args, ctx):
+    config, tuning, timeout = motion.handles(ctx, 'shake')
+    origin = tuning['origin_pose']
+    if origin is None:
+        raise SystemExit('No taught origin pose yet. Run: '
+                         'python main.py --teach-origin --execute')
+    centre, shaking, ends = midair(config, origin, args.lift)
+    print(f'step 1  go_to_origin: {summary(origin)}')
+    print(f'step 2  lift to mid-air: {args.lift:+.1f} mm above home, {summary(centre)}')
+    print(f'step 3  shake:        {args.shake:.1f} s of {shaking["stroke_mm"]:.1f} mm strokes '
+          f'at {shaking["frequency_hz"]:.2f} Hz, sweeping z '
+          f'{ends["bottom"]["z"]:.1f} to {ends["top"]["z"]:.1f} mm')
+    print('        shake levels the tool first, then holds on throughout: it never '
+          'grasps or releases.')
+    if not shaking['require_holding']:
+        print('        --allow-empty: the holding check is off, so nothing is verified held.')
+    if not args.execute:
+        print('\nDry run: nothing moved. Add --execute to run all three steps.')
+        return
+    if not await confirm('All three steps are planned by the Viam motion service.'):
+        return
+    homed = await motion.go_to_origin(ctx)
+    print(f'homed:   {summary(homed["pose"])}')
+    print(f'         arrival error {homed["position_error_mm"]:.2f} mm, '
+          f'{homed["orientation_error_deg"]:.2f} deg')
+    # Lift from where the arm actually stopped, so the box checked is the box swept.
+    centre, _, _ = midair(config, homed['pose'], args.lift)
+    lifted = await motion.plan_to(ctx, centre, tuning, timeout, 'lift to mid-air')
+    print(f'mid-air: {summary(lifted["pose"])}')
+    print(f'         arrival error {lifted["position_error_mm"]:.2f} mm, '
+          f'{lifted["orientation_error_deg"]:.2f} deg')
+    shaken = await shake.shake(ctx, duration_s=args.shake)
+    print(f'shaken:  {shaken["strokes"]} strokes in {shaken["duration_s"]:.1f} s, '
+          f'{shaken["frequency_hz"]:.2f} Hz achieved against '
+          f'{shaken["requested_frequency_hz"]:.2f} Hz asked for')
+    print(f'         swept z {shaken["swept_z_mm"][0]:.1f} to {shaken["swept_z_mm"][1]:.1f} mm, '
+          f'worst stroke error {shaken["worst_stroke_error_mm"]:.2f} mm, '
+          f'{shaken["worst_stroke_orientation_error_deg"]:.2f} deg')
+    print(f'         holding before {shaken["holding_before"]}, '
+          f'after {shaken["holding_after"]}')
+    print(f'settled: {summary(shaken["pose"])}')
+    print('Done.')
+
+
 async def home_and_jog(args, ctx):
     tuning = motion.settings(ctx.config)
     origin = tuning['origin_pose']
@@ -156,6 +250,12 @@ async def home_and_jog(args, ctx):
     print('Done.')
 
 
+def step(args):
+    if args.teach_origin:
+        return teach
+    return home_and_shake if args.shake is not None else home_and_jog
+
+
 async def run(args, config):
     robot = await connect(args.address)
     ctx = Context(config, robot)
@@ -163,7 +263,7 @@ async def run(args, config):
         print(f'config: {args.config}')
         print(f'tool now in {config["frame"]}: {summary(await motion.tool_pose(ctx))}')
         try:
-            await (teach if args.teach_origin else home_and_jog)(args, ctx)
+            await step(args)(args, ctx)
         except BaseException:
             # Halt motion only; never auto-open a gripper that may be holding something.
             await asyncio.wait_for(robot.stop_all(), 5)
@@ -174,11 +274,23 @@ async def run(args, config):
 
 def main():
     args = parser().parse_args()
+    if args.teach_origin and args.shake is not None:
+        raise SystemExit('--teach-origin only measures the origin; run --shake on its own')
+    if args.allow_empty and args.shake is None:
+        raise SystemExit('--allow-empty only applies to --shake')
     for axis in ('dx', 'dy', 'dz'):
-        step = getattr(args, axis)
-        if not math.isfinite(step) or abs(step) > MAX_STEP_MM:
+        offset = getattr(args, axis)
+        if not math.isfinite(offset) or abs(offset) > MAX_STEP_MM:
             raise SystemExit(f'--{axis} must be within +/-{MAX_STEP_MM:g} mm for a jog')
-    asyncio.run(run(args, task_config(args)))
+    if not math.isfinite(args.lift) or not 0 <= args.lift <= MAX_LIFT_MM:
+        raise SystemExit(f'--lift must be 0 to {MAX_LIFT_MM:g} mm above the origin')
+    config = task_config(args)
+    if args.shake is not None:
+        ceiling = config['limits']['max_stir_duration_s']
+        if not math.isfinite(args.shake) or not 0 < args.shake <= ceiling:
+            raise SystemExit(f'--shake must be a duration in (0, {ceiling:g}] seconds, '
+                             'the configured limits.max_stir_duration_s')
+    asyncio.run(run(args, config))
 
 
 if __name__ == '__main__':

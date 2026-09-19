@@ -11,13 +11,23 @@
     "coconut_water",
     "cup",
     "spoon",
-    "milk"
+    "milk",
+    "pitcher"
   ],
   "calibrated": true,
   "workspace_mm": {
-    "x": [-805.0, 609.2],
-    "y": [-805.0, 369.2],
-    "z": [37.0, 805.0]
+    "x": [
+      -805.0,
+      609.2
+    ],
+    "y": [
+      -805.0,
+      369.2
+    ],
+    "z": [
+      37.0,
+      805.0
+    ]
   },
   "limits": {
     "max_steps": 24,
@@ -70,27 +80,101 @@
       "source": "viam_frame_system",
       "at": "2026-09-18T21:34:43+00:00",
       "bounds_from": {
-        "x": ["reach", "wall-front"],
-        "y": ["reach", "wall-side"],
-        "z": ["table", "reach"]
+        "x": [
+          "reach",
+          "wall-front"
+        ],
+        "y": [
+          "reach",
+          "wall-side"
+        ],
+        "z": [
+          "table",
+          "reach"
+        ]
       },
-      "anchor_mm": [493.284, -48.696, 202.222],
-      "arm_base_mm": [0.0, 0.0, 0.0],
+      "anchor_mm": [
+        493.284,
+        -48.696,
+        202.222
+      ],
+      "arm_base_mm": [
+        0.0,
+        0.0,
+        0.0
+      ],
       "tool_mm": {
         "above_mm": 110.0,
         "below_mm": 50.0,
         "radius_mm": 70.755
       },
       "obstacles": [
-        {"name": "wall-front", "min": [690.0, -1500.0, -500.0], "max": [790.0, 1500.0, 1100.0]},
-        {"name": "ceiling", "min": [-1500.0, -1500.0, 1000.0], "max": [1500.0, 1500.0, 1100.0]},
-        {"name": "table", "min": [-1500.0, -1500.0, -223.0], "max": [1500.0, 1500.0, -23.0]},
-        {"name": "wall-side", "min": [-1500.0, 450.0, -500.0], "max": [1500.0, 550.0, 1100.0]}
+        {
+          "name": "wall-front",
+          "min": [
+            690.0,
+            -1500.0,
+            -500.0
+          ],
+          "max": [
+            790.0,
+            1500.0,
+            1100.0
+          ]
+        },
+        {
+          "name": "ceiling",
+          "min": [
+            -1500.0,
+            -1500.0,
+            1000.0
+          ],
+          "max": [
+            1500.0,
+            1500.0,
+            1100.0
+          ]
+        },
+        {
+          "name": "table",
+          "min": [
+            -1500.0,
+            -1500.0,
+            -223.0
+          ],
+          "max": [
+            1500.0,
+            1500.0,
+            -23.0
+          ]
+        },
+        {
+          "name": "wall-side",
+          "min": [
+            -1500.0,
+            450.0,
+            -500.0
+          ],
+          "max": [
+            1500.0,
+            550.0,
+            1100.0
+          ]
+        }
       ],
       "skipped": [
-        {"frame": "cam", "reason": "configured task resource"},
-        {"frame": "gripper", "reason": "configured task resource"},
-        {"frame": "arm", "reason": "configured task resource"}
+        {
+          "frame": "cam",
+          "reason": "configured task resource"
+        },
+        {
+          "frame": "gripper",
+          "reason": "configured task resource"
+        },
+        {
+          "frame": "arm",
+          "reason": "configured task resource"
+        }
       ]
     }
   }

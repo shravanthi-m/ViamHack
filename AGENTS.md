@@ -28,6 +28,35 @@ budget; do not request it again for each in-scope attempt. New physical trials a
 not authorized by a documentation or planning request. Unknown state blocks motion
 until it is observed or reset, even when a retry budget remains.
 
+## The task loop
+
+Given a task, the orchestrating agent composes a plan and runs it through one path:
+
+```sh
+python -m runtime --config CONFIG brief "<task>" --out runs/<task>.brief.json
+# compose the plan JSON from that brief, then:
+python -m runtime --config CONFIG validate PLAN --executable   # offline, never connects
+python -m runtime --config CONFIG agent-run PLAN               # gated physical execution
+```
+
+`brief --out` writes the role guide, the task config, the tool catalog and an example
+plan as one JSON file, so composing does not depend on terminal scrollback. The plan
+is a composition of registry primitives, never generated driver code.
+
+`agent-run` has no mock stage. It validates at execute grade, requires every tool to
+have a team implementation, prints the whole plan, and asks one gate question before
+connecting. Refusing the gate, or `q`, aborts before any connection; everything after
+it is real motion. `validate --executable` is the offline check: same validation and
+the same implementability answer, exiting non-zero and never connecting.
+
+Run `validate --executable` while composing, and reach for `agent-run` only when the
+user has explicitly asked for a robot run. The gate is the operator's confirmation
+that the workspace is ready; it is not the authorization to attempt motion, which
+still comes from the user. Six of the twelve registry tools
+have no implementation today, `localize` among them, so a plan that needs to find an
+object cannot execute yet: report that rather than substituting typed coordinates for
+a localization the station cannot perform.
+
 The agent may write and version skill compositions, task gates, recovery recipes,
 and evidence-backed settings within the team's exposed parameter ranges. Humans
 own primitive internals, calibration, and hardware limits. Never broaden those

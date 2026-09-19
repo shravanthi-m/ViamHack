@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "instruction": "Return to the existing taught home pose.",
+  "steps": [
+    {"id": "home", "tool": "go_to_origin", "args": {}}
+  ]
+}

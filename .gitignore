@@ -8,3 +8,4 @@ config/local.json
 experiments/skill_learning/station.json
 experiments/record_replay/paths/
 runs/
+demonstrations/

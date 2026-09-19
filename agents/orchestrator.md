@@ -25,8 +25,11 @@ final candidate, and aggregate task findings into shared Markdown techniques.
    `x`/`y`/`z` in mm plus `yaw` in degrees, reached with the tool pointing down.
    Respect primitive pre/postconditions. Refresh localization when objects move
    and at a new phase; references do not carry between runtime invocations.
-4. Save drafts under `demos/` or a candidate skill revision, validate them, and run
-   mock checks. Report missing implementations and unknown conditions. Mock data
+4. Save drafts under `demos/` or a candidate skill revision, then run
+   `python -m runtime [--config CONFIG] validate PLAN --executable`: execute-grade
+   validation that also names any tool with no team implementation, offline. Use
+   `agent-run PLAN` only when the user has asked for a robot run; it has no mock
+   stage, so it prints the plan, gates on one confirmation, and then moves the arm. Report missing implementations and unknown conditions. Mock data
    only checks integration; it cannot pass a physical outcome gate.
 5. Within an explicitly requested robot run or trial batch, evaluate the task
    gate, then run each admitted phase with

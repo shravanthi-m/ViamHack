@@ -53,10 +53,26 @@ def validate_plan(plan, config, *, execute=False):
         previous[name] = tool_name
 
 
+def missing_implementations(plan, handlers=None):
+    """Tools this plan needs that no team implementation provides. Offline; no connection."""
+    handlers = implementations() if handlers is None else handlers
+    return sorted({step['tool'] for step in plan['steps']} - handlers.keys())
+
+
 def require_implementations(plan, handlers):
-    missing = sorted({step['tool'] for step in plan['steps']} - handlers.keys())
+    missing = missing_implementations(plan, handlers)
     if missing:
         raise ValueError('Team implementations missing: ' + ', '.join(missing))
+
+
+def describe_plan(plan):
+    """What the executor will do, in order, for a human reading a gate prompt."""
+    lines = [f'{plan["instruction"]}', f'{len(plan["steps"])} steps:']
+    for index, step in enumerate(plan['steps'], 1):
+        args = ', '.join(f'{key}={value["$ref"]}' if isinstance(value, dict) and '$ref' in value
+                         else f'{key}={json.dumps(value)}' for key, value in step['args'].items())
+        lines.append(f'  {index:2d}  {step["id"]:<16} {step["tool"]}({args})')
+    return '\n'.join(lines)
 
 
 async def run_plan(plan, ctx: Context, *, execute=False, runs='runs', handlers=None):

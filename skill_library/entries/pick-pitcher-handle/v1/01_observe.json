@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "instruction": "Observe the stainless steel pitcher and current gripper view before horizontal handle-grasp admission; no motion.",
+  "steps": [
+    {
+      "id": "overhead",
+      "tool": "capture",
+      "args": {
+        "view": "overhead"
+      }
+    },
+    {
+      "id": "wrist",
+      "tool": "capture",
+      "args": {
+        "view": "wrist"
+      }
+    }
+  ]
+}
