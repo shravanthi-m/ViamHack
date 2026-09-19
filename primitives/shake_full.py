@@ -24,7 +24,7 @@ import json
 import math
 import os
 import time
-
+from viam.services.motion import MotionClient  # import BEFORE connecting
 from dotenv import load_dotenv
 from viam.robot.client import RobotClient
 from viam.components.arm import Arm
