@@ -1,3 +1,4 @@
+from tests.config import UNCALIBRATED_CONFIG
 import copy
 import json
 import math
@@ -8,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 from runtime import calibration
 from runtime.__main__ import dispatch, parser
-from runtime.config import DEFAULT_CONFIG, read_json, validate_config
+from runtime.config import read_json, validate_config
 
 ANCHOR = (493.3, -48.7, 202.2)
 
@@ -67,7 +68,7 @@ def frames():
 
 
 def config(**overrides):
-    return {**read_json(DEFAULT_CONFIG), **overrides}
+    return {**read_json(UNCALIBRATED_CONFIG), **overrides}
 
 
 def derive(**kwargs):
@@ -151,7 +152,7 @@ class WorkspaceTests(unittest.TestCase):
 
 class SettingsTests(unittest.TestCase):
     def test_config_without_a_calibration_block_is_still_valid(self):
-        validate_config(read_json(DEFAULT_CONFIG))
+        validate_config(read_json(UNCALIBRATED_CONFIG))
         self.assertEqual(calibration.settings({})['margin_mm'], 10.0)
 
     def test_bad_calibration_blocks_are_rejected_by_every_command(self):

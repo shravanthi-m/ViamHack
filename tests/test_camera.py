@@ -1,3 +1,4 @@
+from tests.config import UNCALIBRATED_CONFIG
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,12 +7,12 @@ from unittest.mock import patch
 from primitives import camera, mock
 from primitives.registry import catalog, implementations
 from primitives.types import Context
-from runtime.config import DEFAULT_CONFIG, read_json
+from runtime.config import read_json
 from runtime.orchestrator import validate_plan
 
 
 def config(views=None, **overrides):
-    values = read_json(DEFAULT_CONFIG)
+    values = read_json(UNCALIBRATED_CONFIG)
     if views is not None:
         values['primitive_settings'] = {'camera': {'views': views}}
     return {**values, **overrides}

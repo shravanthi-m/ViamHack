@@ -1,3 +1,4 @@
+from tests.config import UNCALIBRATED_CONFIG
 import asyncio
 import copy
 import json
@@ -8,12 +9,12 @@ from unittest.mock import AsyncMock, patch
 
 from primitives.types import Context
 from runtime.__main__ import dispatch, parser
-from runtime.config import DEFAULT_CONFIG, ROOT, read_json
+from runtime.config import ROOT, read_json
 from runtime.orchestrator import run_plan, validate_plan
 
 
 def fixture():
-    config = read_json(DEFAULT_CONFIG)
+    config = read_json(UNCALIBRATED_CONFIG)
     config['calibrated'] = True
     config['workspace_mm'] = {'x': [-100, 100], 'y': [-100, 100], 'z': [0, 300]}
     return read_json(ROOT / 'demos/fixed.json'), config
@@ -41,7 +42,7 @@ class PlanTests(unittest.TestCase):
 
     def test_uncalibrated_mock_allowed_but_execution_rejected(self):
         plan, _ = fixture()
-        config = read_json(DEFAULT_CONFIG)
+        config = read_json(UNCALIBRATED_CONFIG)
         validate_plan(plan, config)
         with self.assertRaises(ValueError):
             validate_plan(plan, config, execute=True)
@@ -102,7 +103,7 @@ class ExecutionTests(unittest.IsolatedAsyncioTestCase):
         return read_json(next(Path(self.temp.name).glob('*/result.json')))
 
     async def test_mock_resolves_references_without_calling_hardware_or_handlers(self):
-        path = await run_plan(self.plan, Context(read_json(DEFAULT_CONFIG), self.robot),
+        path = await run_plan(self.plan, Context(read_json(UNCALIBRATED_CONFIG), self.robot),
                               runs=self.temp.name, handlers=self.handlers)
         self.assertEqual(self.calls, [])
         self.assertEqual(self.robot.mock_calls, [])

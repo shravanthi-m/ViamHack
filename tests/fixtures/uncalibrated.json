@@ -1,0 +1,13 @@
+{
+  "resources": {"arm": "arm", "gripper": "gripper", "camera": "cam", "motion": "builtin"},
+  "frame": "world",
+  "objects": ["coffee", "coconut_water", "cup", "spoon", "pitcher"],
+  "calibrated": false,
+  "workspace_mm": {"x": null, "y": null, "z": null},
+  "limits": {
+    "max_steps": 24,
+    "primitive_timeout_s": 60,
+    "run_timeout_s": 600,
+    "max_stir_duration_s": 15
+  }
+}

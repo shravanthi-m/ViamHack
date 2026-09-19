@@ -60,14 +60,33 @@ class FakeGripper:
         return IsHoldingSomethingResponse(is_holding_something=held)
 
 
+class FakeArm:
+    """Reports distinct joints for captured endpoints and records direct strokes."""
+    def __init__(self, service):
+        self.service, self.moves = service, []
+
+    async def do_command(self, command, timeout=None):
+        return {}
+
+    async def get_joint_positions(self, timeout=None):
+        from viam.proto.component.arm import JointPositions
+        return JointPositions(values=[self.service.at['z'] / 10, 0, 0, 0, 0, 0])
+
+    async def move_to_joint_positions(self, positions, timeout=None):
+        self.moves.append(list(positions.values))
+
+
 class ShakeTests(unittest.IsolatedAsyncioTestCase):
     async def shake(self, duration_s=0.3, *, service=None, gripper=None, **overrides):
         from viam.components.gripper import Gripper
+        from viam.components.arm import Arm
         from viam.services.motion import MotionClient
         self.service = service or FakeMotion()
         self.gripper = gripper or FakeGripper()
+        self.arm = FakeArm(self.service)
         with patch.object(MotionClient, 'from_robot', return_value=self.service), \
-             patch.object(Gripper, 'from_robot', return_value=self.gripper):
+             patch.object(Gripper, 'from_robot', return_value=self.gripper), \
+             patch.object(Arm, 'from_robot', return_value=self.arm):
             return await shake.shake(Context(config(**overrides), robot=object()),
                                      duration_s=duration_s)
 
@@ -84,31 +103,38 @@ class ShakeTests(unittest.IsolatedAsyncioTestCase):
             self.assertAlmostEqual(levelling[axis], START[axis], places=6)
         self.assertAlmostEqual(result['levelled_pose']['o_z'], 0.0, places=9)
 
-    async def test_strokes_a_fixed_distance_through_the_planner(self):
+    async def test_plans_endpoints_then_interpolates_recorded_joint_configurations(self):
         result = await self.shake(**tuned())
         goals = self.service.goals()
         self.assertGreaterEqual(len(goals), 3, 'expected levelling plus strokes')
         centre = result['levelled_pose']['z']
         offsets = sorted({round(goal['z'] - centre, 6) for goal in goals[1:-1]})
         self.assertEqual(offsets, [-15.0, 15.0])  # fixed distance, both directions
-        # Every stroke is a planned move: nothing bypasses the motion service.
+        # The planner establishes endpoints; the new primitive strokes in joint space.
         for goal in goals:
             self.assertAlmostEqual(goal['x'], START['x'], places=6)
             self.assertAlmostEqual(goal['y'], START['y'], places=6)
             self.assertAlmostEqual(goal['o_z'], 0.0, places=9)
-        self.assertEqual(result['strokes'], len(goals) - 2)
+        self.assertEqual(len(goals), 4)  # level, top capture, bottom capture, settle
+        self.assertEqual(len(self.arm.moves), result['strokes'] * 12)
+        for joints in self.arm.moves:
+            self.assertGreaterEqual(joints[0], (centre - 15) / 10)
+            self.assertLessEqual(joints[0], (centre + 15) / 10)
+            self.assertEqual(joints[1:], [0] * 5)
         self.assertEqual(result['swept_z_mm'], [centre - 15.0, centre + 15.0])
         self.assertAlmostEqual(goals[-1]['z'], centre, places=6)  # settles back at centre
 
-    async def test_every_move_is_verified(self):
-        """No move may go unchecked: one pose read per move, plus the opening read."""
+    async def test_planned_endpoints_and_settle_have_pose_readback(self):
+        """The new joint strokes do not provide per-stroke tool-pose feedback."""
         await self.shake(**tuned())
         self.assertEqual(self.service.reads, len(self.service.requests) + 1)
 
     async def test_alternates_up_and_down(self):
         result = await self.shake(**tuned())
         centre = result['levelled_pose']['z']
-        heights = [goal['z'] - centre for goal in self.service.goals()[1:-1]]
+        heights = [joints[0] * 10 - centre for joints in self.arm.moves[11::12]]
+        self.assertEqual(len(heights), result['strokes'])
+        self.assertEqual(heights[0], 15)
         for first, second in zip(heights, heights[1:]):
             self.assertEqual(first, -second, 'strokes must alternate direction')
 

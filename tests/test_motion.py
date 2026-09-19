@@ -1,13 +1,14 @@
+from tests.config import UNCALIBRATED_CONFIG
 import unittest
 from unittest.mock import patch
 
 from primitives import motion
 from primitives.types import Context
-from runtime.config import DEFAULT_CONFIG, read_json
+from runtime.config import read_json
 
 
 def config(**overrides):
-    values = read_json(DEFAULT_CONFIG)
+    values = read_json(UNCALIBRATED_CONFIG)
     values['calibrated'] = True
     values['workspace_mm'] = {'x': [-500, 500], 'y': [-500, 500], 'z': [0, 500]}
     return {**values, **overrides}

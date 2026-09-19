@@ -211,9 +211,9 @@ async def home_and_shake(args, ctx):
     print(f'shaken:  {shaken["strokes"]} strokes in {shaken["duration_s"]:.1f} s, '
           f'{shaken["frequency_hz"]:.2f} Hz achieved against '
           f'{shaken["requested_frequency_hz"]:.2f} Hz asked for')
-    print(f'         swept z {shaken["swept_z_mm"][0]:.1f} to {shaken["swept_z_mm"][1]:.1f} mm, '
-          f'worst stroke error {shaken["worst_stroke_error_mm"]:.2f} mm, '
-          f'{shaken["worst_stroke_orientation_error_deg"]:.2f} deg')
+    print(f'         endpoint z range {shaken["swept_z_mm"][0]:.1f} '
+          f'to {shaken["swept_z_mm"][1]:.1f} mm; '
+          'intermediate joint strokes do not report tool-pose error')
     print(f'         holding before {shaken["holding_before"]}, '
           f'after {shaken["holding_after"]}')
     print(f'settled: {summary(shaken["pose"])}')

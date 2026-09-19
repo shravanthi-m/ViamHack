@@ -12,7 +12,7 @@ from unittest.mock import patch
 import main
 from primitives.types import Context
 from runtime.config import DEFAULT_CONFIG, read_json
-from tests.test_shake import FakeGripper, FakeMotion
+from tests.test_shake import FakeArm, FakeGripper, FakeMotion
 
 # The taught origin: a side grip, already near level, so shake can level it.
 ORIGIN = dict(x=493.28, y=-48.70, z=202.22, o_x=0.990, o_y=-0.130, o_z=-0.047,
@@ -68,14 +68,10 @@ class ShakeStepTests(unittest.IsolatedAsyncioTestCase):
         from viam.components.gripper import Gripper
         from viam.services.motion import MotionClient
 
-        class FakeArm:
-            async def do_command(self, command, timeout=None):
-                return {}
-
         # The shim reports every step it takes; capture it rather than printing it.
         with patch.object(MotionClient, 'from_robot', return_value=self.service), \
              patch.object(Gripper, 'from_robot', return_value=self.gripper), \
-             patch.object(Arm, 'from_robot', return_value=FakeArm()), \
+             patch.object(Arm, 'from_robot', return_value=FakeArm(self.service)), \
              patch.object(main, 'confirm', return_value=True), \
              contextlib.redirect_stdout(io.StringIO()) as reported:
             await main.home_and_shake(parsed, Context(values or config(), robot=object()))
