@@ -3,68 +3,60 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#191919">
-  <meta name="description" content="Varista. A little extra, in every cup. Meet Claudia at the open counter and explore our café world.">
+  <meta name="description" content="Varista. A little extra, in every cup. Meet Claudia at the open counter.">
   <title>Varista — A little extra, in every cup.</title><link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <a class="skip-link" href="#counter">Skip to Claudia’s counter</a>
+  <a class="skip-link" href="#counter">Skip to the open counter</a>
   <header>
-    <a class="brand" href="/" aria-label="Varista home">VARISTA</a>
-    <nav aria-label="Main navigation"><a href="#flavors">THE MENU</a><a href="#counter">MEET CLAUDIA</a></nav>
-    <div class="header-right"><span class="status"><i></i> <span id="station-mode">PREVIEW MODE</span></span><button id="fullscreen" class="icon-button" title="Toggle full screen" aria-label="Toggle full screen">⛶</button></div>
+    <a class="brand" href="#home" aria-label="Varista home">VARISTA</a>
+    <nav aria-label="Main navigation"><a href="#counter">OPEN COUNTER ↗</a></nav>
+    <div class="header-right"><span class="status" id="station-mode">PREVIEW MODE</span><button id="fullscreen" class="icon-button" title="Toggle full screen" aria-label="Toggle full screen">⛶</button></div>
   </header>
   <main>
-    <section class="cafe-hero" aria-labelledby="hero-title">
+    <section class="cafe-hero" id="home" aria-labelledby="hero-title">
       <img class="editorial-hero" src="/cafe-lifestyle.png" alt="Black and white café photograph of a guest in a cashmere sweater holding a whipped iced latte" width="1536" height="1024" fetchpriority="high">
-      <div class="hero-copy"><p class="eyebrow">THE EVERYDAY, A LITTLE EXTRAORDINARY.</p><h1 id="hero-title">YOUR NEW<br>DAILY OBSESSION.</h1><p class="hero-description">Whipped cream. Slow drizzles. Main character energy.</p><a class="cafe-cta" href="#flavors">EXPLORE THE GOOD STUFF <span>↓</span></a></div>
+      <div class="hero-copy"><p class="eyebrow">THE EVERYDAY, A LITTLE EXTRAORDINARY.</p><h1 id="hero-title">YOUR NEW<br>DAILY OBSESSION.</h1><p class="hero-description">Whipped cream. Slow drizzles. Main character energy.</p><a class="cafe-cta" href="#counter">STEP UP TO THE COUNTER <span>↓</span></a></div>
       <div class="hero-bottom"><span>VARISTA — THE CAFÉ EDIT</span><a href="#counter">HUMAN TAUGHT. ROBOT MADE. ↗</a></div>
     </section>
-    <section class="flavor-section" id="flavors" aria-labelledby="flavor-title">
-      <h2 id="flavor-title" class="sr-only">The flavor moodboard</h2>
-      <div class="flavor-grid">
-        <article class="flavor-card matcha"><div class="flavor-caption"><span>01 / THE CLOUD</span><h3>VANILLA CLOUD MATCHA</h3><p>Cold foam. Soft peaks. A little cloud nine.</p></div></article>
-        <article class="flavor-card caramel"><div class="flavor-caption"><span>02 / THE SLOW DRIZZLE</span><h3>WHIPPED CARAMEL LATTE</h3><p>Golden caramel. Whipped high. Dressed to impress.</p></div></article>
-        <article class="flavor-card chocolate"><div class="flavor-caption"><span>03 / THE FINISHING TOUCH</span><h3>CHOCOLATE AFTER HOURS</h3><p>Rich chocolate. Cocoa curls. Worth lingering over.</p></div></article>
-      </div>
-      <p class="flavor-note">THE FLAVOR MOODBOARD — CAFÉ INSPIRATION. CLAUDIA’S AVAILABLE POUR IS BELOW.</p>
-    </section>
-    <section class="cafe-story" aria-labelledby="story-title"><div class="story-copy"><span class="editorial-rule" aria-hidden="true"></span><p class="eyebrow">A LITTLE INDULGENCE. A LOT OF PERSONALITY.</p><h2 id="story-title">COME FOR THE POUR.<br>STAY FOR THE MOMENT.</h2><p>Something whipped. Something sweet. Something that turns your everyday coffee break into your favorite part of the day.</p><p>Welcome to Varista. Pull up to the counter, meet Claudia, and make yourself a regular.</p><a class="story-link" href="#counter">MEET YOUR BARISTA <span>↗</span></a></div></section>
-    <section class="intro" id="counter"><div><p class="eyebrow">HUMAN TAUGHT. ROBOT MADE.</p><h2>THE OPEN COUNTER.</h2></div><p class="intro-note">Meet Claudia, your resident robot barista.<br>One signature pour. Plenty of personality.</p></section>
-    <div class="dashboard">
-      <section class="vision panel">
-        <div class="panel-heading"><h2><span class="dot"></span> Through Claudia’s eyes</h2><span id="image-status" class="micro">AWAITING IMAGE</span></div>
-        <div class="viewport" id="viewport">
-          <div class="empty-state" id="empty-state"><div class="reticle"><span>+</span></div><h3>Let’s see the counter.</h3><p>Capture a station snapshot or load a photo<br>to bring Claudia’s view into focus.</p></div>
-          <div id="image-wrap" hidden><img id="scene" alt="Station camera observation"><div id="boxes"></div></div>
-          <img id="live-scene" alt="Live station camera" hidden>
-          <div class="scanline" id="scanline" hidden></div>
-          <span class="viewport-corner top-left"></span><span class="viewport-corner bottom-right"></span>
-          <div class="view-footer"><span id="source-label">STATION VISION</span><span id="age-label">SNAPSHOT VIEW</span></div>
+    <section class="counter" id="counter" aria-labelledby="counter-title">
+      <div class="intro"><div><p class="eyebrow">HUMAN TAUGHT. ROBOT MADE.</p><h2 id="counter-title">THE OPEN COUNTER.</h2></div><p>Meet Claudia, your robot barista.<br>Pick a task. Make yourself at home.</p></div>
+      <div class="dashboard">
+        <div class="vision panel">
+          <div class="panel-heading"><h3>Through Claudia’s eyes</h3><span id="image-status" class="micro">WAITING FOR CAMERA</span></div>
+          <div class="viewport">
+            <div class="empty-state" id="empty-state"><span class="reticle" aria-hidden="true">+</span><h3>Let’s see the counter.</h3><p>The overhead camera connects automatically.</p></div>
+            <img id="scene" alt="Station camera snapshot" hidden>
+            <img id="live-scene" alt="Live station camera" hidden>
+            <div class="view-footer"><span id="source-label">STATION VISION</span><span id="age-label">WAITING FOR CAMERA</span></div>
+          </div>
+          <p class="helper" id="camera-status" role="status">Connecting to the overhead camera…</p>
+          <div class="camera-actions"><button id="scan" class="button" disabled>Scan objects</button></div>
+          <p class="helper" id="scan-status" role="status">Scan the overhead view to identify objects.</p>
+          <div id="scan-result" hidden>
+            <div class="scan-heading"><span class="micro">SCANNED FRAME · NOT LIVE</span><span id="scan-time" class="micro"></span></div>
+            <div class="viewport scan-viewport">
+              <img id="scan-image" alt="Scanned overhead frame with object bounding boxes">
+              <svg id="scan-boxes" xmlns="http://www.w3.org/2000/svg" aria-label="Detected object bounding boxes" role="img"></svg>
+            </div>
+            <p class="helper" id="scan-summary"></p>
+          </div>
         </div>
-        <div class="camera-actions"><button id="live-toggle" class="button secondary" aria-pressed="false" disabled>▶ Start live view</button><button id="capture" class="button secondary" disabled>↗ Capture snapshot</button><label class="button ghost" for="upload">＋ Load image</label><input type="file" id="upload" accept="image/jpeg,image/png,image/webp" hidden><button id="scan" class="button primary" disabled>✧ Analyze scene</button></div>
-        <div class="live-options"><label><input type="checkbox" id="live-identify" checked> Identify objects automatically</label><span id="live-status" role="status">Live view is off.</span></div>
-        <p class="helper">Live view targets 5 frames/sec. Identification sends sampled frames to OpenRouter; results arrive as analysis completes.</p>
-        <div id="identified-panel" class="identified-panel" hidden><div class="section-label">LATEST IDENTIFICATION <span id="identified-age"></span></div><div id="identified-wrap"><img id="identified-scene" alt="Exact camera frame used for the latest object identification" hidden><div id="identified-boxes"></div></div><p class="helper">Boxes belong to this analyzed frame. The live view above continues independently.</p></div>
-        <p class="helper" id="vision-helper">Scene analysis adds approximate object labels to a snapshot.</p>
-        <div class="observation"><div class="section-label">ON THE COUNTER <span id="object-count">—</span></div><div id="objects" class="object-list"><span class="empty-copy">Object observations will appear here.</span></div><p id="summary"></p><p class="helper" id="position-status">Grasp positions need measured object geometry.</p></div>
-      </section>
-      <aside class="side-column">
-        <section class="conversation panel">
-          <div class="panel-heading"><h2>Claudia · Your robot barista</h2><button id="sound" class="text-button" aria-pressed="false">Enable sassy voice</button></div>
-          <div class="avatar" aria-hidden="true"><div class="eye"></div><div class="eye"></div><div class="mouth"></div></div>
-          <div class="speech" id="reply" aria-live="polite">I’m Claudia. One signature pour.<br>Plenty of personality.</div>
-          <div class="voice-settings"><label for="voice-choice">CLAUDIA’S VOICE</label><select id="voice-choice" aria-label="Claudia’s speaking voice"><option>Browser default</option></select><span>Bright, playful &amp; a little cheeky.</span></div>
-          <div class="suggestions"><button data-prompt="Claudia, help pour a drink">The signature pour ↗</button><button data-prompt="Claudia, what do you see?">What do you see? ↗</button></div>
-          <div class="recipe"><span class="section-label">THE SIGNATURE / 01</span><h3>Coconut &amp; pitcher</h3><p>Coconut water first. Then a pour from the pitcher.<br>Each one returned, just as Claudia was taught.</p><ol><li><span>01</span> Coconut pour + return</li><li><span>02</span> Pitcher pour + return</li></ol></div>
-          <form id="request-form"><label class="sr-only" for="request">Ask Claudia</label><div class="request-input"><input id="request" placeholder="Claudia, help pour a drink…" maxlength="500" autocomplete="off"><button id="mic" type="button" aria-label="Start voice input" title="Start voice input">🎙</button><button type="submit" aria-label="Send request">↑</button></div></form>
-          <p class="helper" id="voice-note">Tap the mic to chat. Try “hello,” “what can you do,” or “tell me a joke.”</p>
-          <div class="request-card" id="request-card" hidden><span class="section-label" id="request-status">SIGNATURE POUR</span><p id="draft-text"></p><button id="copy" class="text-button">Copy request ↗</button></div>
-        </section>
-        <section class="activity panel"><div class="panel-heading"><h2>Behind the pour</h2><span id="run-mode" class="tag">NOT ATTACHED</span></div><p id="demo-status" class="helper" aria-live="polite">Preview mode · Claudia’s routine is ready to explore.</p><p id="run-status">Waiting for a run</p><ol id="timeline"><li class="placeholder-event">Attach a run to follow its recorded steps.</li></ol><p class="helper">Activity comes from run evidence. A completed command alone does not verify a drink.</p></section>
-      </aside>
-    </div>
+        <div class="tasks panel">
+          <div class="panel-heading"><h3>A little help from Claudia.</h3><span class="micro">YOUR TASKS</span></div>
+          <div class="task-list" aria-label="Predefined tasks">
+            <button class="task-button signature" data-task="signature" data-prompt="Claudia, help pour a drink"><span class="task-number">01</span><span><strong>Pour signature drink</strong><small>Coconut water, then pitcher. Return each one.</small></span><span aria-hidden="true">↗</span></button>
+            <button class="task-button" data-task="reset" data-prompt="Reset station"><span class="task-number">02</span><span><strong>Reset</strong><small>Identify held carton/pitcher or empty hand. Return home.</small></span><span aria-hidden="true">↗</span></button>
+            <button class="task-button" data-task="shake" data-prompt="Shake held object"><span class="task-number">03</span><span><strong>Shake held object</strong><small>Already gripped and lifted. Shake 3 seconds; keep holding.</small></span><span aria-hidden="true">↗</span></button>
+          </div>
+          <form id="request-form"><label for="request" class="eyebrow">SOMETHING ELSE IN MIND?</label><div class="request-input"><input id="request" placeholder="Describe a custom task…" maxlength="500" autocomplete="off" required><button type="submit" aria-label="Send custom task">↑</button></div></form>
+          <div class="task-feedback" role="status" aria-live="polite"><p id="request-status" class="micro">READY WHEN YOU ARE</p><p id="reply">Choose a task or tell Claudia what you need.</p><p id="draft-text" hidden></p></div>
+          <p class="helper" id="mode-note">Preview mode · No robot motion.</p>
+        </div>
+      </div>
+    </section>
     <div id="error" role="alert" hidden></div>
-    <footer><a class="footer-wordmark" href="#" aria-label="Varista, back to top">VARISTA</a><span>A LITTLE EXTRA. ALWAYS.<br>HUMAN TAUGHT. CLAUDIA POURED.</span><span>BUILT WITH VIAM<br>&amp; HUMAN INGENUITY</span></footer>
+    <footer><a class="footer-wordmark" href="#home">VARISTA</a><span>A LITTLE EXTRA. ALWAYS.</span></footer>
   </main>
   <script src="/app.js"></script>
 </body>

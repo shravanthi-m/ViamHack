@@ -1,36 +1,34 @@
 # Varista · Claudia’s counter
 
 A local presentation for **Varista**, starring **Claudia**, the robot bartender.
-It includes station snapshots, optional OpenRouter object observations, run activity,
-and voice/text drink requests. The default preview never connects for motion.
+The UI keeps the front page and open counter, with a camera scene, three preset
+task buttons, and one custom-task input. The default preview never connects for motion.
 Start from the repository root:
 
 ```sh
-.venv/bin/python -m runtime observer
+.venv/bin/python -m runtime --config config/local.json observer
 ```
 
-Open http://127.0.0.1:8765. Load a station photo to preview it. The observer has no
-network dependency until you choose a camera snapshot or scene analysis.
+Open http://127.0.0.1:8765. The overhead camera stream starts automatically when
+the page opens. Camera access is read-only; preview mode does not enable motion.
 
-For configured station snapshots and an existing run's events:
+To attach an optional existing run to the API:
 
 ```sh
 .venv/bin/python -m runtime --config config/local.json observer \
   --view overhead --run runs/EXACT_RUN_DIRECTORY
 ```
 
-`--view` must name a declared camera view. Capture snapshot connects only on click,
-reads an image, and closes its connection. Snapshot mode shows individual images. Use **Start live view** for the live feed
-described below. `--image PATH` can preload a saved JPEG, PNG or WebP. Uploads stay in
-memory; station captures use the camera primitive's normal ignored image directory.
-The observer binds only to localhost.
+`--view` defaults to `overhead` and must name a declared camera view.
+`--image PATH` can still preload a saved JPEG, PNG or WebP as a fallback while
+the stream connects. The observer binds only to localhost.
 
 `--run` pins the exact directory containing `events.jsonl` and `result.json`,
 including prepared-demo/replay run directories. It never guesses the latest run.
 Mock logs are labeled MOCK RUN. Replay logs without an explicit mode are labeled
 RECORDED RUN; their files do not establish whether a robot is currently connected.
-Completed commands are displayed as reported run status, not independent proof of
-physical success. To attach a newly created run, restart with that exact directory.
+Run state remains available through `/api/state`; the simplified UI does not show
+the run timeline. Completed commands are not independent proof of physical success. To attach a newly created run, restart with that exact directory.
 
 ## Live camera and recurring identification
 
@@ -40,43 +38,33 @@ Start with a configured camera view (no motion is enabled):
 .venv/bin/python -m runtime --config config/local.json observer --view overhead
 ```
 
-Click **Start live view**. The server keeps one read-only Viam camera connection and
+Opening the page starts the stream automatically. The server keeps one read-only Viam camera connection and
 polls `get_images` at up to five frames per second, publishing a JPEG stream to the
 browser. Frames are resized within 960 × 720 and kept in bounded memory, not saved
 to disk. The actual FPS and frame age are displayed. Camera/network latency can
 reduce the rate; this is not a high-frame-rate WebRTC feed.
 
-**Identify objects automatically** sends sampled frames to the configured OpenRouter
-vision model. One analysis runs at a time, with a three-second pause after each
-result; slower model responses reduce the identification rate without blocking
-video. No backlog of camera frames is queued. The default labels are coconut water, pitcher, cup, and shaker (the capped metal
-bottle). Shaker is a presentation-only label: it does not change configured robot
-task objects or supply a manipulation target. `--objects` can select a subset of
-these display labels and the configured task objects.
-Uncheck identification before starting for video without model requests.
+The simplified UI starts live view with `identify: false`: it shows the camera scene
+without automatic model requests. **Scan objects** analyzes one fresh overhead
+frame on demand and shows labeled bounding boxes on that exact still image below
+the live feed. The live feed continues while scanning. Each click makes one model
+request; repeated scans replace the previous result. Empty detections and errors
+appear beneath the button.
+There are no manual live-view, snapshot, or image-upload buttons. Camera failures
+are retried automatically at most once every ten seconds while the page is visible.
 
-The live image stays above **LATEST IDENTIFICATION**, which shows the exact sampled
-frame and its corresponding boxes, frame age, and measured analysis latency. The
-object list describes that analyzed frame, not guaranteed current positions. Boxes
-are never drawn over a newer live image. These observations do not establish
-localization, authorize motion, or become robot targets. Original snapshots and
-saved detections reappear after stopping live view.
+A hidden/closed page stops heartbeats;
+the camera stops within 20 seconds unless another visible viewer keeps the shared
+session alive. Returning to the page automatically reconnects an expired stream.
+Starting/stopping requires same-origin POSTs; loading a stream URL
+never initiates a camera connection.
 
-**Stop live view** closes camera acquisition promptly even during transcription or
-analysis. An already sent model request may finish, but its result is discarded.
-Restart waits for any in-flight analysis to finish, preventing overlapping requests.
-Camera failure ends the session with an error; model failure leaves video running
-and retries with a bounded delay. A hidden/closed page stops heartbeats; the camera
-and further model requests stop within 20 seconds unless another visible viewer
-keeps the shared session alive. Starting/stopping requires same-origin POSTs;
-loading a stream URL never initiates a camera connection.
-
+The scan uses `/api/scan` and retrieves the exact analyzed image through
+`/api/live/identified`. Boxes resize with the image and include object labels;
+partial or uncertain detections are labeled accordingly. Results are cleared when
+the camera session changes or the website loses its connection.
 Offline verification: `python -m unittest discover -s tests -v` and
-`node --test tests/test_observer_voice.cjs`. Fake-camera tests cover streaming,
-slow/failed inference, matched frames, bounded history, disconnects, and cleanup.
-
-Implementation references: [Viam’s Python streaming approach](https://docs.viam.com/build-apps/tasks/stream-video/)
-and [OpenRouter image inputs](https://openrouter.ai/docs/guides/overview/multimodal/image-understanding).
+`node --test tests/test_observer_ui.cjs`. Tests use fake cameras and mocked hardware.
 
 ## Optional scene understanding
 
@@ -88,7 +76,7 @@ OPENROUTER_VISION_MODEL=qwen/qwen3-vl-30b-a3b-instruct
 OPENROUTER_STT_MODEL=openai/whisper-1
 ```
 
-Analyze scene sends the displayed image to OpenRouter and the selected model
+The `/api/scan` endpoint sends the selected image to OpenRouter and the selected model
 provider. The key never reaches the browser. The default model supports image
 inputs and JSON schema responses; it can be changed through the environment.
 The default scan vocabulary is the demo's coconut carton, pitcher and cup. Pass
@@ -110,34 +98,24 @@ and observed accuracy within the primitive owner's grasp tolerance. Marker-based
 measurement or depth plus calibrated transforms can be evaluated separately.
 See [the exact remaining demo and localization checklist](openrouter_demo_checklist.md).
 
-## Voice and presentation
+## Task controls
 
-Tap the mic to enable Claudia’s sassy spoken replies and start a voice turn. With
-an OpenRouter key, tap again to finish recording (30 seconds maximum). Audio goes
-to OpenRouter using `OPENROUTER_STT_MODEL`. Otherwise browser speech recognition
-ends the turn after you pause; this may use the browser’s online speech service.
-Test microphone permissions in the presenting browser. Typed input remains available.
+- **Pour signature drink** requests coconut pour → carton return → pitcher pour →
+  pitcher return through the existing supervised routine.
+- **Reset** asks the terminal operator to identify an empty hand, coconut carton,
+  or pitcher. It returns an identified held object to its taught place, gates
+  release on observed support, then returns home empty. Unknown objects block it.
+- **Shake held object** shakes a securely side-gripped, sealed, already lifted
+  object for three seconds. It finishes still holding; no pickup or return.
+- The custom-task input sends the user's text to the same request endpoint.
 
-Try “Hello Claudia,” “how are you,” “what can you do,” “tell me a joke,” or “thank you.”
-Claudia answers these phrases automatically. This is a small, fixed conversation
-repertoire, not an open-ended language model chat.
-
-**Enable sassy voice** previews her voice without opening the mic. The selector
-offers available English browser voices, preferring Samantha or another named voice
-when available. Slightly brisk pacing, bright pitch, and cheeky copy create the
-personality; the exact sound depends on the installed/browser voices. Changing the
-voice plays a sample. Click **Sassy voice on** to mute replies. Starting another mic
-turn enables replies again and interrupts current speech to avoid feedback.
-
-“Claudia, what do you see?” triggers optional image analysis. Say or type
-**“Claudia, help pour a drink”**, then send, or click **The signature pour**.
-Claudia selects one fixed routine: coconut pour → carton return → pitcher pour →
-pitcher return. Preview shows the recipe and explicitly reports no motion.
-Unsupported requests (including amounts or extra actions) cannot launch a script.
-Transcribed speech uses a review-only request: chat replies are automatic, and scene
-questions can analyze the displayed image. A drink request stays in the input with
-**REVIEW REQUEST · PRESS SEND** and cannot start the routine. Review it, then press
-send to submit it. Existing terminal operator gates still apply in supervised mode.
+All three fixed tasks use supervised execution integrations. The exact scripts,
+starting conditions, and launch commands are in [Fixed demo tasks](fixed_tasks.md).
+Unsupported custom tasks display **TASK NOT CONNECTED** and preserve the text for
+editing. Preview mode describes each task without moving the robot. Amount control,
+shaker finding/pickup/return, and extra actions remain unsupported.
+Voice controls, scene-analysis controls, recipe details, and the activity timeline
+are no longer part of the page. The backend endpoints are unchanged.
 
 ## Enable supervised execution
 
@@ -151,15 +129,17 @@ interactive operator terminal, start:
 ```
 
 Use the exact pack path you prepared; the example directory must already exist.
-The header reads **SUPERVISED ROBOT MODE**. Sending the signature request launches
-only that pack. The first terminal confirmation checks intent, saved home, empty
+The header reads **SUPERVISED ROBOT MODE**. Each task uses the exact pack/config
+and terminal entry gates. For Signature, the first confirmation checks intent, saved home, empty
 hand, fixed cup, free-drive off, and clear paths before connecting. All existing
 placement measurements, grasp, support/release, and outcome gates remain in the
-terminal. The current recordings still require manual gripper closure. This is
+terminal. The configured `ufactory_atomic` adapter closes automatically using
+[per-object settings](configuration.md#automatic-closure-and-object-settings);
+without that opt-in, operator-entered recordings require manual closure. This is
 a supervised routine, not an unattended one-command pour.
 
-The display automatically follows only this request’s run directory and shows
-when Claudia is waiting for the operator. Duplicate requests are blocked while
+The task feedback follows this request and shows when Claudia is waiting for the
+operator. Duplicate requests are blocked while
 a routine is active; failures require inspection/reset and a server restart.
 There are no automatic retries. Ctrl-C cancels the worker through the existing
 replay StopAll/connection-close path. Do not run another robot controller alongside
@@ -170,17 +150,13 @@ at request time, and again before connection. A stale pack is rejected.
 The full routine remains a candidate until the runbook’s observed physical trials
 are complete. UI tests and software validation do not establish pouring success.
 
-Before presenting: load an actual station image, attach the intended run, test the
-microphone in the presenting browser, and use the full-screen button. Rehearse
-OpenRouter latency/quality on actual station images before depending on its boxes.
-If vision credentials are unavailable, use the snapshot and activity display.
+Before presenting: verify that the overhead stream starts and check task controls in
+preview mode. Use the full-screen button if needed.
 Verify/rebuild prepared packs after integration source edits as required by their
 integrity checks; preparation does not replace physical rehearsal.
 
 References: [OpenRouter image inputs](https://openrouter.ai/docs/guides/overview/multimodal/image-understanding),
 [structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs),
-[model](https://openrouter.ai/qwen/qwen3-vl-30b-a3b-instruct),
-[browser speech recognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition),
-[browser voices, pitch and rate](https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesisUtterance).
+[model](https://openrouter.ai/qwen/qwen3-vl-30b-a3b-instruct).
 
-Voice controller regression tests (offline): `node --test tests/test_observer_voice.cjs`.
+UI controller regression tests (offline): `node --test tests/test_observer_ui.cjs`.

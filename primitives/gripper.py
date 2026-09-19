@@ -6,11 +6,11 @@ Gripper API itself has no force parameter: `Grab` closes at whatever the module 
 configured for. Force here is the documented UFactory torque extension, a percent
 of the gripper's rated torque, set through `do_command`.
 
-That extension is not universal, so this module never assumes it. Every close that
-names a force first reads the torque back from the gripper to prove the command was
-understood, sets it, and reads it back again to prove it took. A gripper that cannot
-report its torque fails the primitive instead of quietly closing at the machine's
-default, because a force silently ignored is how a cup gets crushed.
+The default adapter sets torque and verifies readback before Grab. Stations with
+the UFactory atomic extension can explicitly select `ufactory_atomic`: send force
+and closure together, preserving the current speed, then require holding feedback.
+This adapter reports commanded controller percent, not measured force or readback.
+It never falls back to an ordinary Grab after a failed extension command.
 
 `open_gripper` releases whatever is held. It is a deliberate command, unlike the
 failure paths elsewhere in this scaffold, which stop motion but never auto-open a
@@ -30,6 +30,8 @@ DEFAULT_SETTINGS = {
     'max_force_percent': 30.0,       # Conservative ceiling, as in the earlier station config.
     'force_tolerance_percent': 0.5,  # How far readback may sit from the request.
     'require_holding': True,         # Only turn off for a gripper that cannot report it.
+    'force_control': 'torque_readback',
+    'object_force_percent': {},      # Explicit replay settings, keyed by configured object ID.
 }
 
 
@@ -46,7 +48,36 @@ def settings(config):
             raise ValueError(f'primitive_settings.gripper.{key} must be a number in (0, {ceiling}]')
     if type(values['require_holding']) is not bool:
         raise ValueError('primitive_settings.gripper.require_holding must be boolean')
+    if values['force_control'] not in ('torque_readback', 'ufactory_atomic'):
+        raise ValueError('gripper.force_control must be torque_readback or ufactory_atomic')
+    if values['force_control'] == 'ufactory_atomic' and not values['require_holding']:
+        raise ValueError('ufactory_atomic requires holding feedback')
+    profiles = values['object_force_percent']
+    if not isinstance(profiles, dict):
+        raise ValueError('gripper.object_force_percent must map configured object IDs to percentages')
+    for object_id, force in profiles.items():
+        if object_id not in config.get('objects', []):
+            raise ValueError(f'Unknown gripper object: {object_id}')
+        validate_force(force, values)
     return values
+
+
+def validate_force(force, tuning):
+    if (type(force) not in (int, float) or not math.isfinite(force)
+            or not 0 < force <= tuning['max_force_percent']):
+        raise ValueError(f'force_percent must be a number in (0, '
+                         f'{tuning["max_force_percent"]}], the configured maximum')
+    # The module converts torque to uint16. Refuse silent truncation.
+    if tuning['force_control'] == 'ufactory_atomic' and force != int(force):
+        raise ValueError('ufactory_atomic force_percent must be a whole controller percent')
+
+
+def force_for_object(config, object_id):
+    """Require an explicit per-object setting; never guess from another object."""
+    tuning = settings(config)
+    if object_id not in tuning['object_force_percent']:
+        raise ValueError(f'{object_id}: missing gripper.object_force_percent setting')
+    return tuning['object_force_percent'][object_id]
 
 
 def max_force(config):
@@ -107,11 +138,10 @@ async def close_gripper(ctx: Context, *, force_percent: float) -> dict:
     """Close the gripper at a named force and finish holding the object, or raise.
 
     The force is a percent of the gripper's rated torque, bounded by
-    primitive_settings.gripper.max_force_percent. It is set and read back before the
-    gripper closes, so a machine that cannot honour it fails instead of closing at
-    its own default. Postcondition: the gripper reports an object held. Returns the
-    force actually read back and the holding report, which is the evidence a later
-    step or gate can check. It does not prove which object was grasped.
+    primitive_settings.gripper.max_force_percent. The selected adapter establishes
+    readback or commands atomic force-limited closure. Postcondition: the gripper
+    reports an object held. Evidence distinguishes commanded force from readback;
+    neither identifies the object or proves a secure grasp throughout a pour.
     """
     from viam.components.gripper import Gripper
 
@@ -119,12 +149,11 @@ async def close_gripper(ctx: Context, *, force_percent: float) -> dict:
         raise ValueError('close_gripper needs a connected robot')
     config = ctx.config
     tuning = settings(config)
-    if (type(force_percent) not in (int, float) or not math.isfinite(force_percent)
-            or not 0 < force_percent <= tuning['max_force_percent']):
-        raise ValueError(f'force_percent must be a number in (0, '
-                         f'{tuning["max_force_percent"]}], the configured maximum')
+    validate_force(force_percent, tuning)
     timeout = config['limits']['primitive_timeout_s']
     handle = Gripper.from_robot(ctx.robot, config['resources']['gripper'])
+    if tuning['force_control'] == 'ufactory_atomic':
+        return await atomic_close(handle, force_percent, timeout)
     applied = await apply_force(handle, force_percent, tuning, timeout)
     if not await handle.grab(timeout=timeout):
         raise RuntimeError('Gripper closed without reporting an object grasped')
@@ -133,6 +162,28 @@ async def close_gripper(ctx: Context, *, force_percent: float) -> dict:
     if tuning['require_holding'] and holding is not True:
         raise RuntimeError('Gripper closed but reports nothing held')
     return {'requested_force_percent': force_percent, 'holding': holding, **applied}
+
+
+async def atomic_close(handle, force_percent, timeout):
+    """Station-specific UFactory adapter; an empty response is only an RPC ack."""
+    setting = 'ufactory_atomic'
+    if await held(handle, timeout, required=True, setting=setting) is not False:
+        raise RuntimeError('Atomic closure requires a verified empty hand')
+    feedback = await handle.do_command({'get_gripper_speed': True}, timeout=timeout)
+    speed = feedback.get('gripper_speed') if isinstance(feedback, dict) else None
+    if (type(speed) not in (int, float) or not math.isfinite(speed)
+            or not 1 <= speed <= 5000 or speed != int(speed)):
+        raise RuntimeError('No supported current gripper speed; refusing closure')
+    command = {'grab_with_torque': {'position': 0, 'speed': speed, 'torque': force_percent}}
+    response = await handle.do_command(command, timeout=timeout)
+    if response != {}:
+        raise RuntimeError('Unexpected atomic gripper response; inspect before any retry')
+    holding = await held(handle, timeout, required=True, setting=setting)
+    if holding is not True:
+        raise RuntimeError('Atomic gripper closed but reports nothing held')
+    return dict(requested_force_percent=force_percent, commanded_force_percent=force_percent,
+                force_control='ufactory_atomic', force_readback=False, holding=holding,
+                command=command)
 
 
 async def open_gripper(ctx: Context) -> dict:

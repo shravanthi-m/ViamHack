@@ -32,11 +32,21 @@ def parser():
     observer.add_argument('--observation', help='Optional saved detections matching --image exactly')
     observer.add_argument('--objects', help='Comma-separated detection IDs (default: coconut_water,pitcher,cup)')
     observer.add_argument('--run', help='Exact run directory whose events to display')
-    observer.add_argument('--view', help='Enable read-only snapshots from this configured camera view')
+    observer.add_argument('--view', default='overhead',
+                          help='Camera view streamed automatically when the website opens (default: overhead)')
     observer.add_argument('--demo-pack', help='Exact frozen coconut/pitcher demo pack')
     observer.add_argument('--enable-demo-execution', action='store_true',
                           help='Allow UI drink requests to launch the fixed replay with terminal operator gates')
     sub.add_parser('localization-status', help='Show measured localization prerequisites offline')
+    vp = sub.add_parser('vision-demo-profile', help='Fit/check measured image offsets offline; no robot connection')
+    vp.add_argument('object', choices=('coconut_water', 'pitcher'))
+    vp.add_argument('measurements', help='JSON with texture patches and measured image placements')
+    vp.add_argument('--out', required=True, help='New measured profile JSON')
+    vp.add_argument('--demonstrations', default=str(ROOT / 'demonstrations'))
+    vc = sub.add_parser('vision-demo-check', help='Check a saved image against a measured replay profile, offline')
+    vc.add_argument('object', choices=('coconut_water', 'pitcher'))
+    vc.add_argument('image')
+    vc.add_argument('--demonstrations', default=str(ROOT / 'demonstrations'))
     perceive = sub.add_parser('perceive', help='Analyze a saved image through OpenRouter; never connects to robot')
     perceive.add_argument('image')
     perceive.add_argument('--objects', help='Comma-separated detection IDs (default: coconut_water,pitcher,cup)')
@@ -49,6 +59,11 @@ def parser():
     prepared.add_argument('pack')
     prepared.add_argument('--execute', action='store_true')
     prepared.add_argument('--runs', default=str(ROOT / 'runs/teach_replay'))
+    fixed = sub.add_parser('fixed-task', help='Offline check or supervised signature/reset/held-object shake')
+    fixed.add_argument('task', choices=('signature', 'reset', 'shake'))
+    fixed.add_argument('--pack', required=True, help='Exact frozen demo pack')
+    fixed.add_argument('--execute', action='store_true')
+    fixed.add_argument('--runs', default=str(ROOT / 'runs/fixed_tasks'))
     sub.add_parser('tools', help='Print the primitive catalog and implementation readiness')
     brief = sub.add_parser('brief', help='Prepare a language-planning prompt for your coding/LLM agent')
     brief.add_argument('instruction')
@@ -251,6 +266,34 @@ async def connected(args, config, plan=None):
 async def dispatch(args):
     config = read_json(args.config)
     validate_config(config)
+    if args.command == 'fixed-task':
+        from .fixed_tasks import RECIPES, validate
+        validate(args.task, args.pack, args.config)
+        print(' → '.join(RECIPES[args.task]))
+        if not args.execute:
+            print('Offline check passed. No connection or motion; physical entry conditions still required.')
+            return
+        from .observer_demo import ClaudiaDemo
+        from uuid import uuid4
+        demo = ClaudiaDemo(pack=args.pack, config_path=args.config, enabled=True)
+        demo.selected = args.task
+        demo.run_root = Path(args.runs) / uuid4().hex
+        await demo._perform()
+        print(demo.run_directory())
+        return
+    if args.command in ('vision-demo-profile', 'vision-demo-check'):
+        from primitives import replay_vision
+        from .replay import load_episode
+        episode = load_episode(args.demonstrations, args.object, config, track_name=COMPACT_TRACK)
+        if args.command == 'vision-demo-profile':
+            result = replay_vision.build_profile(config, args.object, episode, args.measurements, args.out)
+        else:
+            # Offline diagnostic only: file age does not authorize a physical scene.
+            offset, evidence = replay_vision.offset(config, args.object, episode, args.image,
+                                                    datetime.now(timezone.utc).isoformat())
+            result = dict(offset=offset, evidence=evidence, offline_only=True, motion_authorized=False)
+        print(json.dumps(result, indent=2))
+        return
     if args.command == 'localization-status':
         from primitives.localization import readiness
         print(json.dumps(readiness(config), indent=2))

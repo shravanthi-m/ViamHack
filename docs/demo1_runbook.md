@@ -10,24 +10,35 @@ This is a candidate, not a physically validated complete routine. Execution is a
 fixed program with operator observations and gates; it needs no language-model
 composition during the demo. Software checks cannot replace missing observations.
 
+For automatic pickup offsets within a small measured region, use the
+[minimal vision setup](vision_demo.md). It preserves this routine's fixed cup,
+source orientation/height and operator gates. Vision requires measured profiles
+for both sources; until then, use the existing operator-measured-offset path.
+
 ## Start the prepared script
 
 From the repository root, this verifies the exact prepared data and dependencies
 without connecting or moving:
 
 ```sh
-.venv/bin/python -m runtime --config config/local.json prepared-demo runs/demo1_v1
+.venv/bin/python -m runtime --config config/local.json prepared-demo runs/demo1_auto_grasp_v2
 ```
 
 For an explicitly authorized physical rehearsal or show run:
 
 ```sh
-.venv/bin/python -m runtime --config config/local.json prepared-demo runs/demo1_v1 --execute
+.venv/bin/python -m runtime --config config/local.json prepared-demo runs/demo1_auto_grasp_v2 --execute
 ```
 
+`sh demos/demo1.sh --check` checks this pack offline; `DEMO_PACK` selects another
+explicitly prepared revision. The automatic-closure pack is a new candidate and
+still needs physical rehearsal.
+
 The executor prompts for source placement/clearance, measured offset, grasp,
-support before release, and pour/return outcomes. Existing episodes require
-manual gripper closure at the saved settings: coconut 10%, pitcher 20%. It never
+support before release, and pour/return outcomes. With the configured
+`ufactory_atomic` adapter, closure is automatic using per-object settings:
+coconut 10%, pitcher 20%. See [object settings](configuration.md#automatic-closure-and-object-settings).
+Without that opt-in, operator-entered episodes still require manual closure. It never
 asks a language model to invent the next motion. It does not automatically return
 home at the end, release on failure, or retry a failed pour.
 
@@ -70,7 +81,7 @@ which must be clear even when their pickup positions differ.
 
 ## Resources needed now
 
-1. One operator for source setup, gripper controls and observable outcome checks.
+1. One operator for source setup and observable outcome checks.
 2. Placement marks for both source footprints and orientations, the fixed cup and
    return spots. Verify full finger clearance around the neighboring source.
 3. Repeatable source fill levels and sufficient receiving-cup capacity for both
@@ -78,10 +89,10 @@ which must be clear even when their pickup positions differ.
 4. Authorization for observed rehearsals. Proposed budget: up to six complete
    attempts, zero automatic motion retries; two consecutive successful complete
    runs of one frozen revision before calling Script 1 ready.
-5. If manual closure is unacceptable, primitive-owner integration of the observed
-   atomic force-limited command. The generic gripper primitive still requires a
-   torque readback this station has not supplied. An empty setter response does
-   not prove the force was set. No new recordings are requested for preparation.
+5. Automatic closure uses the integrated atomic force command and explicit object
+   settings. Its offline tests do not establish physical grasp success; rehearse
+   both objects with the selected settings. No new recordings are required just
+   to configure this adapter. Commanded force is not measured force.
 
 ## Remaining two-hour preparation window
 
@@ -102,7 +113,7 @@ Presenter: “The robot pours coconut water, returns the carton, then pours from
 the pitcher and returns it.” Make this claim after full rehearsal passes.
 
 Operator: confirm home/empty and setup; enter reliably measured offsets (zero
-only when verified); manually close at saved force; confirm intended grasp;
+only when verified); observe automatic closure at the configured force; confirm intended grasp;
 observe the pour and upright return; confirm physical support before release.
 Before the pitcher stage, check its scene again. At completion, verify both
 sources returned upright, cup stable and gripper empty.

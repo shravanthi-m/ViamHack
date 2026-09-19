@@ -3,11 +3,14 @@
 Meet **Claudia**, Varista’s robot bartender. She pours and prepares drinks using
 Viam and human-taught routines, composed and refined by an agent.
 
-For the audience display, run `.venv/bin/python -m runtime observer` and open
-http://127.0.0.1:8765. The [observer guide](docs/observer.md) covers camera snapshots,
-optional OpenRouter image labels, run activity, and voice/text requests such as
-“Claudia, help pour a drink.” Preview is the default; opt-in supervised execution
+For the audience display, run `.venv/bin/python -m runtime --config config/local.json observer` and open
+http://127.0.0.1:8765. The overhead camera streams automatically. The [observer guide](docs/observer.md) covers the front page
+and open counter: a camera scene, Pour signature drink / Reset / Shake buttons,
+and one custom-task input. Preview is the default; opt-in supervised execution
 runs the frozen coconut-water → pitcher routine with existing operator gates.
+The [fixed-task scripts](docs/fixed_tasks.md) also provide supervised Reset for an
+identified carton/pitcher or empty hand, and a three-second Shake for an already
+held object. Shaker finding/pickup/return and arbitrary custom tasks are unavailable.
 
 For supervised hand-guided demonstrations and bounded grasp adaptation, see
 [Teach and replay](docs/teach_replay.md), including the coconut-water and pitcher commands.

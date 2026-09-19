@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from unittest.mock import patch
 
@@ -119,6 +120,86 @@ class CloseGripperTests(GripperTestCase):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     await self.close(20.0, primitive_settings={'gripper': bad})
+
+
+class AtomicGripper(FakeGripper):
+    def __init__(self, *, speed=2000, response=None, failure=None, closes=True, **kwargs):
+        super().__init__(holding=False, **kwargs)
+        self.speed, self.response, self.failure, self.closes = speed, response, failure, closes
+
+    async def do_command(self, command, timeout=None):
+        self.commands.append(command)
+        if 'get_gripper_speed' in command:
+            return {'gripper_speed': self.speed}
+        if 'grab_with_torque' in command:
+            if self.failure:
+                raise self.failure
+            self.holding = self.closes
+            return {} if self.response is None else self.response
+        raise AssertionError('Atomic adapter must not issue torque get/set commands')
+
+    async def grab(self, timeout=None):
+        raise AssertionError('Atomic adapter must not fall back to Grab')
+
+
+class AtomicGripperTests(GripperTestCase):
+    async def close(self, handle, force=10, **settings):
+        return await self.call(lambda ctx: gripper.close_gripper(ctx, force_percent=force), handle,
+                               primitive_settings={'gripper': {'force_control': 'ufactory_atomic', **settings}})
+
+    async def test_atomic_force_and_existing_speed_with_holding_evidence(self):
+        handle = AtomicGripper(speed=1700)
+        result = await self.close(handle)
+        self.assertEqual(handle.commands, [{'get_gripper_speed': True},
+                         {'grab_with_torque': {'position': 0, 'speed': 1700, 'torque': 10}}])
+        self.assertTrue(result['holding'])
+        self.assertFalse(result['force_readback'])
+        self.assertEqual(result['commanded_force_percent'], 10)
+        self.assertNotIn('force_percent', result)  # No invented readback.
+
+    async def test_invalid_speed_blocks_before_closure(self):
+        for speed in (None, True, '2000', 0, 5001, 1.5, float('nan')):
+            handle = AtomicGripper(speed=speed)
+            with self.subTest(speed=speed), self.assertRaisesRegex(RuntimeError, 'speed'):
+                await self.close(handle)
+            self.assertEqual(handle.commands, [{'get_gripper_speed': True}])
+
+    async def test_atomic_requires_empty_then_held_feedback(self):
+        loaded = AtomicGripper()
+        loaded.holding = True
+        with self.assertRaisesRegex(RuntimeError, 'empty hand'):
+            await self.close(loaded)
+        self.assertEqual(loaded.commands, [])
+        for handle in (AtomicGripper(reports_holding=False), AtomicGripper(closes=False)):
+            with self.assertRaises(RuntimeError):
+                await self.close(handle)
+
+    async def test_failure_timeout_and_cancellation_never_retry_or_release(self):
+        for failure in (RuntimeError('unsupported'), TimeoutError(), asyncio.CancelledError()):
+            handle = AtomicGripper(failure=failure)
+            with self.assertRaises(type(failure)):
+                await self.close(handle)
+            self.assertEqual(len(handle.commands), 2)
+            self.assertEqual(handle.opened, 0)
+
+    async def test_unexpected_response_is_not_success_even_when_holding(self):
+        with self.assertRaisesRegex(RuntimeError, 'Unexpected'):
+            await self.close(AtomicGripper(response={'success': False}))
+
+    async def test_force_and_feedback_settings_fail_before_commands(self):
+        for force, settings in [(10.5, {}), (31, {}), (True, {}), (10, {'require_holding': False})]:
+            handle = AtomicGripper()
+            with self.assertRaises(ValueError):
+                await self.close(handle, force, **settings)
+            self.assertEqual(handle.commands, [])
+
+    def test_object_profiles_reject_missing_unknown_and_invalid_values(self):
+        for profiles in ({}, {'coconut_water': 31}, {'coconut_water': True},
+                         {'coconut_water': 10.5}, {'typo': 10}, []):
+            cfg = config(primitive_settings={'gripper': {'force_control': 'ufactory_atomic',
+                                                         'object_force_percent': profiles}})
+            with self.assertRaises(ValueError):
+                gripper.force_for_object(cfg, 'coconut_water')
 
 
 class OpenGripperTests(GripperTestCase):

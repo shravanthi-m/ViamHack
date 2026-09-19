@@ -175,7 +175,7 @@ class HTTPTests(unittest.TestCase):
 
     def test_serves_only_known_assets(self):
         with self.request('/') as response:
-            self.assertIn(b'Your robot barista', response.read())
+            self.assertIn(b'THE OPEN COUNTER.', response.read())
         for path in ('/.env', '/../../.env', '/api/execute', '/config/local.json'):
             with self.subTest(path=path), self.assertRaises(HTTPError) as error:
                 self.request(path)

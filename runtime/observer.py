@@ -102,7 +102,7 @@ class Observer:
             if not run_directory:
                 run['status'] = 'failed' if demo['status'] == 'failed' else 'waiting'
         live = self.live.state()
-        return {'frame': frame, 'observation': observation, 'run': run, 'demo': demo, 'live': live,
+        return {'api_version': 2, 'frame': frame, 'observation': observation, 'run': run, 'demo': demo, 'live': live,
                 'vision_configured': bool(provider['OPENROUTER_API_KEY']),
                 'model': provider['OPENROUTER_VISION_MODEL'],
                 'stt_model': provider['OPENROUTER_STT_MODEL'],
@@ -136,11 +136,11 @@ class Observer:
             await asyncio.wait_for(robot.close(), 10)
 
     def scan(self):
+        if self.demo.state()['active']:
+            raise ValueError('Wait for the current routine to finish before scanning.')
         live = self.live.state()
         if live['active']:
-            if live['observation']:
-                return live['observation']
-            raise ValueError('Live identification has no result yet. Enable identification when starting live view, then wait for its first result.')
+            return self.live.scan()
         with self.lock:
             frame = self.frame
         if frame is None:

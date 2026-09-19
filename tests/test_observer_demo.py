@@ -10,9 +10,11 @@ from runtime.observer_demo import ClaudiaDemo, intent
 class IntentTests(unittest.TestCase):
     def test_claudia_drink_and_scene_requests(self):
         for text in ('Claudia, help pour a drink', 'Hey Claudia, pour a drink please!',
-                     'Claudia can you help pour a drink?', 'The signature pour'):
+                     'Claudia can you help pour a drink?', 'The signature pour', 'Pour signature drink'):
             self.assertEqual(intent(text), 'signature')
         self.assertEqual(intent('Claudia, what do you see?'), 'scene')
+        self.assertEqual(intent('Reset station'), 'reset')
+        self.assertEqual(intent('Shake held object'), 'shake')
 
     def test_unsupported_modifications_never_select_script(self):
         for text in ('Do not pour a drink', 'pour a drink then shake it',
@@ -28,6 +30,14 @@ class IntentTests(unittest.TestCase):
         self.assertEqual(demo.request('Claudia, help pour a drink')['status'], 'preview')
         self.assertIsNone(demo.thread)
         verify.assert_not_called()
+
+    def test_all_fixed_tasks_preview_without_starting_a_worker(self):
+        demo = ClaudiaDemo()
+        for task in ('reset', 'shake'):
+            value = demo.request(task)
+            self.assertEqual(value['status'], 'preview')
+            self.assertEqual(value['intent'], task)
+            self.assertIsNone(demo.thread)
 
 
 class ExecutionTests(unittest.TestCase):

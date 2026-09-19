@@ -236,6 +236,51 @@ class EpisodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(io.forces, [])  # Operator-entered force never invokes torque control.
         self.assertLess(io.calls.index('capture_coconut_water_after_place'), io.calls.index('capture_pitcher_current'))
 
+    async def test_automatic_demo_uses_object_settings_for_operator_entered_episodes(self):
+        await self.teach()
+        await self.teach('pitcher')
+        self.config['primitive_settings']['gripper'] = {
+            'force_control': 'ufactory_atomic',
+            'object_force_percent': {'coconut_water': 10, 'pitcher': 20}}
+        io = FakeIO()
+        prompts = []
+        async def answer(prompt):
+            prompts.append(prompt)
+            if 'Measured dx' in prompt:
+                return '0,0,0'
+            return 'yes'
+        path = await run_demo(io, self.config, root=self.root, runs=self.root/'runs',
+                              execute=True, ask_fn=answer, pause_s=0)
+        self.assertEqual(io.forces, [10, 20])
+        self.assertFalse(any('manually' in p or 'enter the team-approved' in p for p in prompts))
+        self.assertEqual(sum('Grasp succeeded' in p for p in prompts), 2)
+        self.assertEqual(read_json(path/'result.json')['status'], 'completed')
+        self.assertIn('automatic_grasp_completed', (path/'events.jsonl').read_text())
+
+    async def test_missing_second_object_force_blocks_entire_demo_before_io(self):
+        await self.teach()
+        await self.teach('pitcher')
+        self.config['primitive_settings']['gripper'] = {
+            'force_control': 'ufactory_atomic', 'object_force_percent': {'coconut_water': 10}}
+        io = FakeIO()
+        for execute in (False, True):
+            with self.assertRaisesRegex(ValueError, 'pitcher: missing'):
+                await run_demo(io, self.config, root=self.root, execute=execute)
+        self.assertEqual(io.calls, [])
+
+    async def test_atomic_closure_failure_stops_before_lift_without_release(self):
+        ep = await self.episode()
+        self.config['primitive_settings']['gripper'] = {
+            'force_control': 'ufactory_atomic', 'object_force_percent': {'coconut_water': 10}}
+        io = FakeIO()
+        io.close = AsyncMock(side_effect=TimeoutError('closure uncertain'))
+        with self.assertRaises(TimeoutError):
+            await self.replay(io, ep)
+        io.close.assert_awaited_once_with(10)
+        self.assertEqual(io.calls.count('open'), 1)  # Initial opening only.
+        self.assertEqual(io.calls.count('pose'), 2)  # Approach/grasp; no lift.
+        self.assertEqual(io.calls[-1], 'stop')
+
     async def test_live_transition_refuses_ik_joint_jump(self):
         ep = await self.episode()
         io = FakeIO()

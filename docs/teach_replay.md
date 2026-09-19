@@ -153,7 +153,12 @@ configured task frame and explicitly confirm it is reliable. Zero is also an
 explicit measured claim. Abort if uncertain: there is no detector or silent zero
 fallback. The existing overhead homography reports 27 mm mean / 68 mm maximum error
 and does not measure height, so raw overhead pixels alone cannot support a precise
-grasp offset. For operator-entered force episodes, replay pauses at the grasp pose
+grasp offset. With `gripper.force_control: ufactory_atomic`, replay closes
+automatically using `gripper.object_force_percent` for the current object, including
+operator-entered episodes. Both source settings must validate before any motion.
+See [configuration](configuration.md#automatic-closure-and-object-settings).
+Holding and intended-object checks remain; the command provides no torque readback.
+Without this opt-in, for operator-entered force episodes, replay pauses at the grasp pose
 and displays the saved force; set it and close manually, then confirm. No torque
 readback is attempted for these episodes. Holding-state checks still apply during
 physical replay. Older episodes with hardware force evidence retain the verified

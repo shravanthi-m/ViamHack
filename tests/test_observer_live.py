@@ -94,6 +94,45 @@ class FeedTests(unittest.TestCase):
         self.assertNotIn('data', result)
         self.feed.heartbeat(session)
 
+    def test_manual_scan_keeps_exact_frame_while_video_advances(self):
+        session = self.feed.start(False)['session']
+        frame = self.feed.next_frame(session)
+        sampled = []
+        def detector(data, objects):
+            sampled.append(data)
+            self.feed._publish(IMAGE, '2026-09-19T15:00:01+00:00')
+            return RESULT
+        self.feed.detector = detector
+        result = self.feed.scan()
+        self.assertEqual(result['session'], session)
+        self.assertEqual(result['frame_id'], frame['id'])
+        self.assertNotEqual(result['frame_id'], self.feed.frame['id'])
+        self.assertEqual(self.feed.identified(result['frame_id']), sampled[0])
+        self.assertEqual((result['image']['width'], result['image']['height']), (960, 720))
+        self.assertFalse(result['motion_ready'])
+        self.assertFalse(self.feed.identify)
+        self.assertTrue(self.feed.state()['active'])
+
+    def test_manual_scan_rejects_missing_and_stale_frames(self):
+        with self.assertRaisesRegex(ValueError, 'fresh camera frame'):
+            self.feed.scan()
+        self.feed.stop_event.clear()
+        self.feed._publish(IMAGE, '2026-09-19T15:00:00+00:00')
+        self.feed.frame['received'] = time.monotonic() - 4
+        with self.assertRaisesRegex(ValueError, 'fresh camera frame'):
+            self.feed.scan()
+
+    def test_manual_scan_discards_result_when_session_stops(self):
+        session = self.feed.start(False)['session']
+        self.feed.next_frame(session)
+        def detector(*_):
+            self.feed.stop()
+            return RESULT
+        self.feed.detector = detector
+        with self.assertRaisesRegex(ValueError, 'session changed'):
+            self.feed.scan()
+        self.assertFalse(self.feed.identified_frames)
+
     def test_stopped_inflight_analysis_cannot_publish_or_spawn_overlap(self):
         entered, finish = threading.Event(), threading.Event()
         def detector(*_):

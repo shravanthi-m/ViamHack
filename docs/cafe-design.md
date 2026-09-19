@@ -2,12 +2,19 @@
 
 Visual reference: https://enlynyc.com/ (reviewed September 19, 2026).
 The design uses its monochrome lifestyle direction, centered wordmark, thin
-uppercase typography, a typographic flavor gallery, and quiet ivory story section.
+uppercase typography, and a quiet ivory counter section.
 Varista's copy, branding, and generated images are original.
 
-The drink gallery is explicitly a flavor moodboard. The supported robot routine
-remains the coconut and pitcher pour. Existing request, camera, voice, and
-operator-gate behavior is preserved.
+The UI contains only the front-page hero and the open counter: a camera scene,
+three preset task buttons (Pour signature drink, Reset, Shake), and one custom-task
+input. The gallery, story, voice controls, recipe card, and run timeline are removed.
+Reset means placing the held item on the table and returning home. Shake means
+finding the shaker, shaking it, and returning it to its original location.
+
+All requests use the existing request endpoint. Only the signature pour has an
+execution integration; Reset, Shake, and unsupported custom tasks explicitly report
+that they are not connected. Existing operator gates are preserved. Live view starts
+without automatic identification; the UI keeps just the camera scene.
 
 ## Image assets
 

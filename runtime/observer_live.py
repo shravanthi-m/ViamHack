@@ -136,6 +136,24 @@ class LiveFeed:
         with self.condition:
             return self.identified_frames.get(frame_id)
 
+    def scan(self):
+        """Analyze one fresh frame while acquisition continues; retain its exact image."""
+        with self.condition:
+            frame, session = self.frame, self.session
+            if self.stop_event.is_set() or not frame or time.monotonic() - frame['received'] > 3:
+                raise ValueError('Wait for a fresh camera frame, then scan again.')
+        result = {**self.detector(frame['data'], self.objects),
+                  'image': image_info(frame['data']), 'motion_ready': False,
+                  'frame_id': frame['id'], 'session': session,
+                  'captured_at': frame['captured_at'], 'observed_at': timestamp()}
+        with self.condition:
+            if self.stop_event.is_set() or self.session != session:
+                raise ValueError('The camera session changed during analysis. Scan again.')
+            self.identified_frames[frame['id']] = frame['data']
+            while len(self.identified_frames) > 2:
+                del self.identified_frames[next(iter(self.identified_frames))]
+        return result
+
     def next_frame(self, session, previous=None):
         with self.condition:
             self.condition.wait_for(lambda: self.stop_event.is_set() or session != self.session
@@ -166,7 +184,7 @@ class LiveFeed:
             # SDK exceptions can contain machine addresses; keep the UI error generic.
             with self.condition:
                 self.status = 'failed'
-                self.error = 'Camera connection failed. Check the station connection, then restart live view.'
+                self.error = 'Camera connection failed. Check the station connection; the page will retry automatically.'
         finally:
             self.stop()
 

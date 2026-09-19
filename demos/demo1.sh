@@ -13,7 +13,8 @@ case "${1:---check}" in
 esac
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo"
+demo_pack=${DEMO_PACK:-runs/demo1_auto_grasp_v2}
 if [ "$mode" = execute ]; then
-    exec .venv/bin/python -m runtime --config config/local.json prepared-demo runs/demo1_v1 --execute
+    exec .venv/bin/python -m runtime --config config/local.json prepared-demo "$demo_pack" --execute
 fi
-exec .venv/bin/python -m runtime --config config/local.json prepared-demo runs/demo1_v1
+exec .venv/bin/python -m runtime --config config/local.json prepared-demo "$demo_pack"

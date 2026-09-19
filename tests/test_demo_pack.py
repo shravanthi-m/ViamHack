@@ -83,6 +83,29 @@ class DemoPackTests(unittest.IsolatedAsyncioTestCase):
             self.freeze()
         self.assertFalse((self.pack / 'manifest.json').exists())
 
+    def test_vision_profile_and_measurement_dependencies_are_frozen(self):
+        evidence = self.root / 'measured-image.png'
+        evidence.write_bytes(b'physical measurement fixture')
+        profile = self.root / 'vision-profile.json'
+        from runtime.demo_pack import digest
+        write(profile, {'evidence_sha256': {str(evidence): digest(evidence)}})
+        cfg = config()
+        cfg['primitive_settings']['replay_vision'] = {'profiles': {
+            name: str(profile) for name in ('coconut_water', 'pitcher')}}
+        write(self.config_path, cfg)
+        # Profile physics are exercised by test_replay_vision; here test pack integrity.
+        with patch('primitives.replay_vision.load_profile'):
+            self.freeze()
+            verify(self.pack, self.config_path)
+            original = profile.read_text()
+            profile.write_text(original+'\n')
+            with self.assertRaisesRegex(ValueError, 'dependency changed'):
+                verify(self.pack, self.config_path)
+            profile.write_text(original)
+            evidence.write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError, 'dependency changed'):
+                verify(self.pack, self.config_path)
+
     def test_existing_pack_never_overwritten(self):
         self.freeze()
         before = (self.pack / 'manifest.json').read_bytes()

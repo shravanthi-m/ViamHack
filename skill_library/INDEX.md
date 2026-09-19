@@ -4,6 +4,7 @@ Read the entry and its evidence before reuse; status alone does not admit a run.
 
 | Skill | Revision | Status | Context / evidence |
 | --- | --- | --- | --- |
+| [Demo 1: measured vision pickup](entries/demo1/v2/SKILL.md) | v2 | Candidate — measurements pending | Two-patch XY translation adapter and per-object automatic closure; fixed cup/orientation/height; no new physical validation |
 | [Demo 1: coconut then pitcher](entries/demo1/v1/SKILL.md) | v1 | Candidate — offline validated | Existing recordings; home/empty start, fixed cup; prepared package and state/reset playbook; cup/shake are separate future scripts |
 | [Taught drink demo with planned landmarks](entries/taught-drink-demo/v2/SKILL.md) | v2 | Candidate — live evaluation | Uses recorded full poses as planner goals; coconut force-limited closure and lift observed; full sequence pending |
 | [Taught coconut and pitcher demo](entries/taught-drink-demo/v1/SKILL.md) | v1 | Candidate — neighbor clearance failure | Coconut grasp pose reached, adjacent pitcher visibly shifted; revised clearance gate, manual force settings, pitcher trajectory gap, and connection recovery; pours unvalidated |

@@ -92,8 +92,9 @@ perception/voice layer. This avoids making the presentation wait for new calibra
    Preparation is offline; use a new output directory, then verify it.
 5. **Rehearse the physical two-pour routine when explicitly authorized.** Establish
    saved home, empty hand, fixed cup, source positions/orientations, fill levels,
-   return spots and full-path clearance. Existing routines require manual gripper
-   closure at taught settings and measured placement confirmation. Keep an operator
+   return spots and full-path clearance. Configure automatic closure with the
+   [object force settings](configuration.md#automatic-closure-and-object-settings)
+   and confirm measured placement. Keep an operator
    at the terminal for each gate. No automatic retry after a partial pour.
 6. **Get two consecutive complete observed successes of the same frozen routine.**
    Both pours, stable cup, no spill/contact, upright returns and empty hand. Then

@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from .config import ROOT, read_json
 from .demo_pack import verify
+from .fixed_tasks import RECIPES
 
 RECIPE = ['Pour coconut water', 'Return the carton', 'Pour from the pitcher', 'Return the pitcher']
 CHAT = {
@@ -43,8 +44,13 @@ def intent(text):
         return 'scene'
     if words in ('help pour a drink', 'pour a drink', 'make me a drink', 'make a drink',
                  'can you help pour a drink', 'can you pour a drink',
-                 'prepare the coconut and pitcher demo', 'the signature pour', 'signature pour'):
+                 'prepare the coconut and pitcher demo', 'the signature pour', 'signature pour',
+                 'pour signature drink'):
         return 'signature'
+    if words in ('reset', 'reset station'):
+        return 'reset'
+    if words in ('shake', 'shake held object'):
+        return 'shake'
     return 'unsupported'
 
 
@@ -58,6 +64,7 @@ class ClaudiaDemo:
         self.closing = False
         self.run_root = None
         self.status, self.prompt = 'idle', None
+        self.selected = 'signature'
         if enabled:
             if not self.pack or not self.config_path:
                 raise ValueError('Demo execution requires --demo-pack and an exact --config.')
@@ -68,13 +75,14 @@ class ClaudiaDemo:
     def state(self):
         with self.lock:
             return {'enabled': self.enabled, 'status': self.status, 'prompt': self.prompt,
-                    'recipe': RECIPE, 'active': bool(self.thread and self.thread.is_alive())}
+                    'task': self.selected, 'recipe': RECIPES[self.selected],
+                    'active': bool(self.thread and self.thread.is_alive())}
 
     def run_directory(self):
         with self.lock:
             root = self.run_root
         # This root belongs to exactly one request, never an unrelated latest run.
-        paths = list((root / 'demo').glob('episode_*')) if root else []
+        paths = list(root.glob('*/episode_*')) if root else []
         return paths[0] if len(paths) == 1 else None
 
     def request(self, text, *, review_only=False):
@@ -86,27 +94,31 @@ class ClaudiaDemo:
         if selected == 'scene':
             return {'intent': selected}
         if selected == 'unsupported':
-            return {'intent': selected, 'message': 'Ambitious. My repertoire is one signature pour and a little banter. Try “Claudia, help pour a drink,” “what can you do,” or “tell me a joke.”'}
+            return {'intent': selected, 'message': 'Choose signature pour, reset, or shake held object. Shaker pickup and automatic object identification for reset are unavailable.'}
         if review_only:
-            return {'intent': selected, 'status': 'review', 'recipe': RECIPE,
-                    'message': 'Excellent taste. Coconut water, then the pitcher. Review your request and press send. I haven’t started moving.'}
+            return {'intent': selected, 'status': 'review', 'recipe': RECIPES[selected],
+                    'message': 'Review this fixed task and press send. No motion has started.'}
         with self.lock:
             if self.closing:
                 raise ValueError('Varista is shutting down.')
             if not self.enabled:
-                return {'intent': selected, 'status': 'preview', 'recipe': RECIPE,
-                        'message': 'The signature. Excellent taste. Coconut water first, then the pitcher, returning each one. This is a preview; I haven’t started moving.'}
+                return {'intent': selected, 'status': 'preview', 'recipe': RECIPES[selected],
+                        'message': 'Preview: ' + ' → '.join(RECIPES[selected]) + '. No robot motion.'}
             if self.thread and self.thread.is_alive():
                 raise ValueError('Claudia already has a drink request in progress. Follow the operator checks.')
             if self.status == 'failed':
                 raise ValueError('The routine stopped. The operator must inspect and reset the station, then restart the server before another attempt.')
             verify(self.pack, self.config_path)
+            if selected != 'signature':
+                from .fixed_tasks import validate
+                validate(selected, self.pack, self.config_path)
+            self.selected = selected
             self.run_root = ROOT / 'runs' / 'claudia' / uuid4().hex
             self.status, self.prompt = 'waiting_operator', None
             self.thread = threading.Thread(target=self._worker, name='claudia-demo')
             self.thread.start()
-            return {'intent': selected, 'status': 'waiting_operator', 'recipe': RECIPE,
-                    'message': 'One signature pour. Naturally. Coconut water, then the pitcher. I’m waiting for the operator’s station check before I begin.'}
+            return {'intent': selected, 'status': 'waiting_operator', 'recipe': RECIPES[selected],
+                    'message': 'Waiting for the operator’s terminal checks: ' + ' → '.join(RECIPES[selected]) + '.'}
 
     async def _ask(self, prompt):
         from .demonstrations import ask
@@ -118,6 +130,10 @@ class ClaudiaDemo:
         return result
 
     async def _perform(self):
+        if self.selected != 'signature':
+            from .fixed_tasks import execute
+            await execute(self.selected, self.pack, self.config_path, ask_fn=self._ask, runs=self.run_root)
+            return
         from .__main__ import check_resources
         from .connection import connect
         from .demonstrations import ViamIO, confirm

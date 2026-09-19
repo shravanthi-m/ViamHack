@@ -3,6 +3,7 @@ import hashlib
 import shutil
 from pathlib import Path
 
+from primitives import gripper, replay_vision
 from .config import ROOT, read_json
 from .demonstrations import now, write
 from .replay import COMPACT_TRACK, TRACK, adapted_plan, load_episode
@@ -40,6 +41,9 @@ def prepare(config_path, demonstrations, out, *, compact=False):
                 for name in OBJECTS}
     for _, meta, track in episodes.values():
         adapted_plan(meta, track, dict(dx=0, dy=0, dz=0), config)
+    if replay_vision.profiles(config):
+        for name, episode in episodes.items():
+            replay_vision.load_profile(config, name, episode)
     # Never replace a rehearsed pack. Failures leave an incomplete pack without a
     # manifest, which prepared-demo refuses; originals are never changed.
     out.mkdir(parents=True, exist_ok=False)
@@ -65,17 +69,27 @@ def prepare(config_path, demonstrations, out, *, compact=False):
                                recorded_duration_s=track['duration_s'],
                                force_percent=meta.get('gripper_force_percent'),
                                force_evidence=meta.get('gripper_force_evidence', {}).get('source'))
+        automatic = gripper.settings(config)['force_control'] == 'ufactory_atomic'
+        summaries[name]['force_control'] = gripper.settings(config)['force_control']
+        summaries[name]['replay_force_percent'] = (gripper.force_for_object(config, name) if automatic
+                                                    else meta.get('gripper_force_percent'))
     external = {str(p): digest(p) for p in [config_path, *code_files()]}
     for filename in config.get('primitive_settings', {}).get('localization', {}).get('homographies', {}).values():
         path = (ROOT / filename).resolve()
         external[str(path)] = digest(path)
+    for filename in replay_vision.profiles(config).values():
+        path = (ROOT / filename).resolve()
+        external[str(path)] = digest(path)
+        for file in read_json(path)['evidence_sha256']:
+            dependency = (ROOT / file).resolve()
+            external[str(dependency)] = digest(dependency)
     manifest = dict(schema='prepared-demo/1', created_at=now(),
                     status='candidate_requires_physical_rehearsal', config=str(config_path),
                     compact=compact, episodes=summaries, external_sha256=external,
                     files_sha256={str(p.relative_to(out)): digest(p)
                                   for p in sorted(out.rglob('*')) if p.is_file()},
                     recovery_attempt_budget=0,
-                    limitations=['Operator-measured localization and all replay gates remain required.',
+                    limitations=['Measured vision profiles or operator-measured offsets; all replay gates remain required.',
                                  'No automatic recovery, arbitrary starting state, or final home move.',
                                  'Offline validation is not physical success evidence.'])
     write(out / 'manifest.json', manifest)
@@ -114,4 +128,6 @@ def verify(pack, config_path):
         if path.name != manifest['episodes'][name]['episode']:
             raise ValueError('Prepared episode selection changed')
         adapted_plan(meta, track, dict(dx=0, dy=0, dz=0), config)
+        if replay_vision.profiles(config):
+            replay_vision.load_profile(config, name, (path, meta, track))
     return manifest

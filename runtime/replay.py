@@ -6,7 +6,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from primitives import gripper, motion
+from primitives import gripper, motion, replay_vision
+from primitives.camera import resolve as camera_resource_for_view
 from .compaction import COMPACT_TRACK, TRACK
 from .config import number, read_json, validate_pose
 from .demonstrations import (DEFAULT_ROOT, PHASES, ask, confirm, event, joint_vector,
@@ -59,6 +60,8 @@ def load_episode(root, skill, config, episode_id=None, track_name=TRACK):
 
 
 def validate_episode(meta, track, skill, config, max_step_deg=20):
+    if gripper.settings(config)['force_control'] == 'ufactory_atomic':
+        gripper.force_for_object(config, skill)
     if (meta.get('schema') != 'teach-episode/1' or meta.get('object') != skill
             or meta.get('status') != 'complete' or meta.get('success') is not True
             or meta.get('grasp_success') is not True):
@@ -125,9 +128,30 @@ def adapted_plan(meta, track, offset, config, *, max_xy_mm=20, max_z_mm=10):
 async def supervised_scene(skill, episode, io, directory, config, ask_fn=ask):
     path, meta, _ = episode
     await confirm(f'{skill}: arm stationary, empty hand, object upright with demonstrated orientation; '
+                  'same object height and unchanged overhead camera mounting; '
                   'fixed cup and taught return spot clear, free-drive OFF, entire recorded swept path clear?', ask_fn)
     observation = await io.capture(directory, skill + '_current')
     event(directory, 'localization_context', reference=str(path / 'metadata.json'), current=observation)
+    if replay_vision.profiles(config):
+        frame = observation['frames']['overhead']
+        images = [im for im in frame['images'] if im.get('mime_type') in ('image/jpeg', 'image/png', 'image/webp')]
+        if len(images) != 1 or frame.get('camera') != camera_resource_for_view(config, 'overhead'):
+            raise ValueError('Vision replay needs one image from the configured overhead camera')
+        current = (Path(directory)/images[0]['path']).resolve()
+        if not current.is_relative_to(Path(directory).resolve()):
+            raise ValueError('Vision image must remain inside the current run')
+        try:
+            offset, evidence = await asyncio.to_thread(replay_vision.offset, config, skill, episode,
+                                                       current, frame['captured_at'])
+        except ValueError as exc:
+            event(directory, 'vision_grasp_blocked', object=skill, reason=str(exc))
+            raise
+        event(directory, 'vision_grasp_offset', object=skill, offset=offset, evidence=evidence)
+        await confirm(f'Vision measured {skill} translation: dx={offset["dx"]:.2f}, '
+                      f'dy={offset["dy"]:.2f} mm (fixed height). Correct object, orientation '
+                      'and adjusted approach path clear?', ask_fn)
+        return dict(object=skill, frame=config['frame'], observation=observation, offset=offset,
+                    reliable=True, source='measured_patch_translation', timestamp=frame['captured_at'])
     print(f'Compare reference images in {path} with current images in {directory}.\n'
           'No automatic localization: enter a measured task-frame translation in mm.\n'
           'Do not guess from the uncorrected overhead homography. Enter q if uncertain.', flush=True)
@@ -150,7 +174,13 @@ async def replay_skill(skill_name, current_scene, *, io, config, episode, direct
         number(max_step_deg, 0.01, 20, 'max_step_deg')
         path, meta, track = episode
         validate_episode(meta, track, skill_name, config, max_step_deg)
-        if force_percent is None:
+        automatic = gripper.settings(config)['force_control'] == 'ufactory_atomic'
+        if automatic:
+            configured_force = gripper.force_for_object(config, skill_name)
+            if force_percent is not None and force_percent != configured_force:
+                raise ValueError('Replay force differs from configured object setting')
+            force_percent = configured_force
+        elif force_percent is None:
             force_percent = meta.get('gripper_force_percent')
         number(force_percent, 0.01, gripper.max_force(config), 'force_percent')
         if (current_scene.get('object') != skill_name or current_scene.get('frame') != config['frame']
@@ -158,7 +188,8 @@ async def replay_skill(skill_name, current_scene, *, io, config, episode, direct
             raise ValueError('Current localization identity/frame/reliability is unknown')
         for stamp in (current_scene['timestamp'], current_scene['observation']['timestamp']):
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(stamp)).total_seconds()
-            if not 0 <= age <= 300:
+            maximum_age = 30 if current_scene.get('source') == 'measured_patch_translation' else 300
+            if not 0 <= age <= maximum_age:
                 raise ValueError('Current scene is stale; observe again')
         offset = current_scene.get('offset')
         if offset is None:
@@ -173,13 +204,17 @@ async def replay_skill(skill_name, current_scene, *, io, config, episode, direct
         await io.pose(plan['pregrasp'])
         await asyncio.sleep(pause_s)
         await io.pose(plan['grasp'])
-        if meta.get('gripper_force_evidence', {}).get('source') == 'operator_entered':
+        if not automatic and meta.get('gripper_force_evidence', {}).get('source') == 'operator_entered':
             await confirm(f'Close the gripper manually with your controls at the saved '
                           f'force {force_percent:g}%. Is the intended object securely grasped?', ask_fn)
             event(directory, 'manual_grasp_confirmed', force_percent=force_percent,
                   force_source='operator_confirmation', hardware_force_verified=False)
         else:
-            await io.close(force_percent)
+            event(directory, 'automatic_grasp_requested', object=skill_name,
+                  force_percent=force_percent,
+                  force_source='object_setting' if automatic else 'taught_or_explicit')
+            result = await io.close(force_percent)
+            event(directory, 'automatic_grasp_completed', object=skill_name, evidence=result)
         if await io.holding() is not True:
             raise RuntimeError('Grasp holding state unknown or empty')
         await confirm('Grasp succeeded on the intended object?', ask_fn)
@@ -236,6 +271,9 @@ async def run_demo(io, config, *, root=DEFAULT_ROOT, runs='runs/teach_replay', e
         validate_episode(meta, track, meta['object'], config, options.get('max_step_deg', 20))
         adapted_plan(meta, track, dict(dx=0, dy=0, dz=0), config,
                      max_xy_mm=options.get('max_xy_mm', 20), max_z_mm=options.get('max_z_mm', 10))
+    if replay_vision.profiles(config):
+        for name, episode in episodes.items():
+            replay_vision.load_profile(config, name, episode)
     if not execute:
         print('Offline validation passed for both episodes. No connection or motion. '
               'Live localization and physical outcome gates remain required.')
@@ -246,12 +284,15 @@ async def run_demo(io, config, *, root=DEFAULT_ROOT, runs='runs/teach_replay', e
     try:
         async with asyncio.timeout(config['limits']['run_timeout_s']):
             for name, episode in episodes.items():
-                force = episode[1].get('gripper_force_percent')
+                automatic = gripper.settings(config)['force_control'] == 'ufactory_atomic'
+                force = (gripper.force_for_object(config, name) if automatic
+                         else episode[1].get('gripper_force_percent'))
                 if force is None:
                     force = float(await ask_fn(f'{name}: older episode has no saved force; '
                                               'enter the team-approved gripper force percent (no default):'))
                 else:
-                    event(directory, 'using_taught_gripper_force', object=name, force_percent=force)
+                    event(directory, 'using_object_gripper_force' if automatic else 'using_taught_gripper_force',
+                          object=name, force_percent=force)
                 scene = await supervised_scene(name, episode, io, directory, config, ask_fn)
                 await replay_skill(name, scene, io=io, config=config, episode=episode,
                                    directory=directory, force_percent=force, ask_fn=ask_fn, **options)

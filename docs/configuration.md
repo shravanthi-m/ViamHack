@@ -58,6 +58,48 @@ planning too. A human still owns the limits: `calibrate` alone writes nothing, a
 `--write` saves what the machine's geometry implies, never a wider box to make a
 skill pass.
 
+## Automatic closure and object settings
+
+For the optional taught-pickup vision adapter and its measured per-object profiles,
+see [minimal vision demo](vision_demo.md). It uses `primitive_settings.replay_vision`
+and does not change the generic `localize` calibration contract.
+
+For this station's UFactory module, merge this block into the existing
+`primitive_settings` in ignored `config/local.json`:
+
+```json
+"gripper": {
+  "force_control": "ufactory_atomic",
+  "object_force_percent": {
+    "coconut_water": 10,
+    "pitcher": 20
+  }
+}
+```
+
+These are controller percentages supplied by the operator, not measured newtons.
+Add entries using configured object IDs when the team supplies their settings.
+Automatic replay requires a setting for every source before either stage can run;
+it uses this map instead of the saved teaching force. It preserves the historical
+recording and records the selected setting in run evidence. Missing, nonnumeric,
+fractional, or out-of-limit settings fail offline. The existing force ceiling
+remains 30% by default; do not raise it to accommodate a failing grasp.
+
+The explicit adapter selects the station's `grab_with_torque` extension. It reads
+and preserves the current gripper speed, requires an empty hand, sends force and
+closure in one command, and requires holding afterward. It does not use standalone
+torque setters or fall back to ordinary Grab. An RPC acknowledgement is not force
+readback: returned evidence marks `force_readback: false`. Supported module routing
+and prior coconut closure were inspected in the station's live-run evidence; this
+integration still needs physical rehearsal, especially for the pitcher.
+
+Without this opt-in, the existing torque-readback adapter and manual closure for
+operator-entered recordings remain unchanged. Automatic closure removes the manual
+gripper operation; placement, intended-object, support/release and outcome gates
+remain supervised. A timeout, unsupported command or failed holding check stops
+the replay without retry or release. Rebuild and rehearse frozen demo packs after
+changing these settings or primitive code.
+
 `workspace_mm` says where the arm may go; it says nothing about where an object
 *is*. That second question is a separate calibration, per camera view, and the two
 are measured by different means: the workspace comes from the machine's own frame
