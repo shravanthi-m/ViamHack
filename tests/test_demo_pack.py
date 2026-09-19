@@ -131,7 +131,7 @@ class DemoPackTests(unittest.IsolatedAsyncioTestCase):
         write(self.config_path, cfg)
         with patch('runtime.fixed_tasks.shaker_book'):
             manifest = self.freeze()
-        self.assertIn(str(book), manifest['external_sha256'])
+        self.assertIn(str(book.resolve()), manifest['external_sha256'])
         book.write_text('{}')
         with self.assertRaisesRegex(ValueError, 'dependency changed'):
             verify(self.pack, self.config_path)
