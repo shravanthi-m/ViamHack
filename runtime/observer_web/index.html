@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#681e2b">
+  <meta name="description" content="Varista. A little extra, in every cup. Meet Claudia at the open counter and explore our café world.">
+  <title>Varista — A little extra, in every cup.</title><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#counter">Skip to Claudia’s counter</a>
+  <div class="announcement">A LITTLE DOWNTOWN ENERGY. A LOT OF GOOD TASTE. <span>✳</span> HUMAN TAUGHT. ROBOT MADE.</div>
+  <header>
+    <a class="brand" href="/" aria-label="Varista home">varista<span class="brand-star" aria-hidden="true">✳</span></a>
+    <nav aria-label="Main navigation"><a href="#flavors">The good stuff</a><a href="#counter">Meet Claudia <span>↗</span></a></nav>
+    <div class="header-right"><span class="status"><i></i> <span id="station-mode">PREVIEW MODE</span></span><button id="fullscreen" class="icon-button" title="Toggle full screen" aria-label="Toggle full screen">⛶</button></div>
+  </header>
+  <main>
+    <section class="cafe-hero" aria-labelledby="hero-title">
+      <div class="hero-copy"><p class="eyebrow"><span class="tiny-star">✳</span> YOUR DAILY DOSE OF MAIN CHARACTER ENERGY</p><h1 id="hero-title">A little <em>extra,</em><br>in every cup.</h1><p class="hero-description">Whipped high. Drizzled slow. Dressed to impress.<br>Your coffee break deserves a little drama.</p><a class="cafe-cta" href="#counter">Meet your barista <span>↗</span></a><div class="hero-footnote"><span class="little-flower" aria-hidden="true">✳</span><span>Human taught. Robot made.<br><strong>Always with personality.</strong></span></div></div>
+      <figure class="hero-photo"><img src="/cafe-editorial.png" alt="Caramel whipped cream latte with a cherry, vanilla foam matcha, and chocolate topped iced mocha in golden café light" width="1536" height="1024" fetchpriority="high"><div class="hero-sticker" aria-hidden="true">SIP SIP<br><em>hooray!</em><span>✳</span></div><figcaption><span>THE VARISTA MOOD</span><span>EXTRA IS OUR ORDINARY ↗</span></figcaption></figure>
+    </section>
+    <div class="flavor-ribbon" aria-label="Whipped, topped, drizzled, obsessed"><span>WHIPPED.</span><i>✳</i><span>TOPPED.</span><i>✳</i><span>DRIZZLED.</span><i>✳</i><span>OBSESSED.</span><i>✳</i></div>
+    <section class="flavor-section" id="flavors" aria-labelledby="flavor-title">
+      <div class="flavor-heading"><p class="eyebrow">MORE IS MORE / THE FLAVOR MOODBOARD</p><h2 id="flavor-title">Good taste. <em>Great toppings.</em></h2><p>A few things we’re dreaming of.<br>Consider this your daily inspiration.</p></div>
+      <div class="flavor-grid">
+        <article class="flavor-card"><div class="flavor-top"><span>01 / THE CLOUD</span><span aria-hidden="true">☁</span></div><h3>Whip it good.</h3><p>Billowy vanilla cream. Soft peaks.<br>A little cloud nine on top.</p><span class="flavor-tag">FLUFFY &amp; FABULOUS</span></article>
+        <article class="flavor-card"><div class="flavor-top"><span>02 / THE FINISHING TOUCH</span><span aria-hidden="true">✳</span></div><h3>Top billing.</h3><p>Chocolate curls. A cherry moment.<br>Because the details make the drink.</p><span class="flavor-tag">THE CHERRY ON TOP</span></article>
+        <article class="flavor-card"><div class="flavor-top"><span>03 / THE SLOW DRIP</span><span aria-hidden="true">≋</span></div><h3>Sweet on you.</h3><p>Golden caramel. Rich chocolate.<br>Take the scenic route to the last sip.</p><span class="flavor-tag">DRIZZLE WITH ABANDON</span></article>
+      </div>
+      <p class="flavor-note">A taste of our café inspiration. Claudia’s available routine is the signature coconut &amp; pitcher pour below.</p>
+    </section>
+    <section class="intro" id="counter"><div><p class="eyebrow">THE OPEN COUNTER / MEET YOUR REGULAR</p><h2>Good company.<br><em>Even better pours.</em></h2></div><p class="intro-note">Meet Claudia, your resident robot barista.<br>One signature pour. Plenty of personality.</p></section>
+    <div class="dashboard">
+      <section class="vision panel">
+        <div class="panel-heading"><h2><span class="dot"></span> Through Claudia’s eyes</h2><span id="image-status" class="micro">AWAITING IMAGE</span></div>
+        <div class="viewport" id="viewport">
+          <div class="empty-state" id="empty-state"><div class="reticle"><span>+</span></div><h3>Let’s see the counter.</h3><p>Capture a station snapshot or load a photo<br>to bring Claudia’s view into focus.</p></div>
+          <div id="image-wrap" hidden><img id="scene" alt="Station camera observation"><div id="boxes"></div></div>
+          <div class="scanline" id="scanline" hidden></div>
+          <span class="viewport-corner top-left"></span><span class="viewport-corner bottom-right"></span>
+          <div class="view-footer"><span id="source-label">STATION VISION</span><span id="age-label">SNAPSHOT VIEW</span></div>
+        </div>
+        <div class="camera-actions"><button id="capture" class="button secondary" disabled>↗ Capture snapshot</button><label class="button ghost" for="upload">＋ Load image</label><input type="file" id="upload" accept="image/jpeg,image/png,image/webp" hidden><button id="scan" class="button primary" disabled>✧ Analyze scene</button></div>
+        <p class="helper" id="vision-helper">Scene analysis adds approximate object labels to a snapshot.</p>
+        <div class="observation"><div class="section-label">ON THE COUNTER <span id="object-count">—</span></div><div id="objects" class="object-list"><span class="empty-copy">Object observations will appear here.</span></div><p id="summary"></p><p class="helper" id="position-status">Grasp positions need measured object geometry.</p></div>
+      </section>
+      <aside class="side-column">
+        <section class="conversation panel">
+          <div class="panel-heading"><h2>Claudia · Your robot barista</h2><button id="sound" class="text-button" aria-pressed="false">Enable sassy voice</button></div>
+          <div class="avatar" aria-hidden="true"><div class="eye"></div><div class="eye"></div><div class="mouth"></div></div>
+          <div class="speech" id="reply" aria-live="polite">I’m Claudia. One signature pour.<br>Plenty of personality.</div>
+          <div class="voice-settings"><label for="voice-choice">CLAUDIA’S VOICE</label><select id="voice-choice" aria-label="Claudia’s speaking voice"><option>Browser default</option></select><span>Bright, playful &amp; a little cheeky.</span></div>
+          <div class="suggestions"><button data-prompt="Claudia, help pour a drink">The signature pour ↗</button><button data-prompt="Claudia, what do you see?">What do you see? ↗</button></div>
+          <div class="recipe"><span class="section-label">THE SIGNATURE / 01</span><h3>Coconut &amp; pitcher</h3><p>Coconut water first. Then a pour from the pitcher.<br>Each one returned, just as Claudia was taught.</p><ol><li><span>01</span> Coconut pour + return</li><li><span>02</span> Pitcher pour + return</li></ol></div>
+          <form id="request-form"><label class="sr-only" for="request">Ask Claudia</label><div class="request-input"><input id="request" placeholder="Claudia, help pour a drink…" maxlength="500" autocomplete="off"><button id="mic" type="button" aria-label="Start voice input" title="Start voice input">🎙</button><button type="submit" aria-label="Send request">↑</button></div></form>
+          <p class="helper" id="voice-note">Tap the mic to chat. Try “hello,” “what can you do,” or “tell me a joke.”</p>
+          <div class="request-card" id="request-card" hidden><span class="section-label" id="request-status">SIGNATURE POUR</span><p id="draft-text"></p><button id="copy" class="text-button">Copy request ↗</button></div>
+        </section>
+        <section class="activity panel"><div class="panel-heading"><h2>Behind the pour</h2><span id="run-mode" class="tag">NOT ATTACHED</span></div><p id="demo-status" class="helper" aria-live="polite">Preview mode · Claudia’s routine is ready to explore.</p><p id="run-status">Waiting for a run</p><ol id="timeline"><li class="placeholder-event">Attach a run to follow its recorded steps.</li></ol><p class="helper">Activity comes from run evidence. A completed command alone does not verify a drink.</p></section>
+      </aside>
+    </div>
+    <div id="error" role="alert" hidden></div>
+    <footer><a class="footer-wordmark" href="#" aria-label="Varista, back to top">varista✳</a><span>A LITTLE EXTRA. ALWAYS.<br>HUMAN TAUGHT. CLAUDIA POURED.</span><span>BUILT WITH VIAM<br>&amp; HUMAN INGENUITY</span></footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

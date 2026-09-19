@@ -65,6 +65,16 @@ def require_implementations(plan, handlers):
         raise ValueError('Team implementations missing: ' + ', '.join(missing))
 
 
+def require_localization_profiles(plan, config, handlers=None):
+    """Offline check for real localization; injected test/team adapters own their checks."""
+    from primitives import localization
+    if handlers is not None and handlers.get('localize') is not localization.localize:
+        return
+    for step in plan['steps']:
+        if step['tool'] == 'localize':
+            localization.target_profile(config, step['args']['object_id'])
+
+
 def describe_plan(plan):
     """What the executor will do, in order, for a human reading a gate prompt."""
     lines = [f'{plan["instruction"]}', f'{len(plan["steps"])} steps:']
@@ -82,6 +92,7 @@ async def run_plan(plan, ctx: Context, *, execute=False, runs='runs', handlers=N
     handlers = implementations() if handlers is None else handlers
     if execute:
         require_implementations(plan, handlers)
+        require_localization_profiles(plan, config, handlers)
         if ctx.robot is None:
             raise ValueError('Physical execution needs a connected robot')
     run = Path(runs) / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + uuid4().hex[:8])

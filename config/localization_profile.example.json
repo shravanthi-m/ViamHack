@@ -1,0 +1,21 @@
+{
+  "schema": "localization-profile/1",
+  "status": "candidate",
+  "object_id": "coconut_water",
+  "view": "overhead",
+  "camera_resource": "overhead-cam",
+  "frame": "world",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "detector_version": "bbox-1000-v1",
+  "calibration_sha256": null,
+  "image_size": null,
+  "bbox_anchor": null,
+  "offset_xy_mm": null,
+  "z_mm": null,
+  "orientation": null,
+  "max_error_mm": null,
+  "tolerance_mm": null,
+  "validated_region_mm": null,
+  "scope": "fixed_orientation_and_height",
+  "evidence": null
+}

@@ -31,7 +31,7 @@ def config():
 class PlanReporting(unittest.TestCase):
     def test_missing_implementations_names_every_unbuilt_tool(self):
         missing = missing_implementations(read_json(ROOT / 'demos/fixed.json'))
-        self.assertIn('localize', missing)
+        self.assertNotIn('localize', missing)  # Implemented; measured profiles are a separate gate.
         self.assertIn('pour', missing)
         self.assertEqual(missing, sorted(missing))
 

@@ -6,7 +6,7 @@ runs and is never a fallback for physical execution.
 
 | Function | Module | Contract |
 | --- | --- | --- |
-| `localize(ctx, object_id=...)` | `localization.py` | Return `Target` in configured frame; raise when uncertain (hand-eye transform supplied) |
+| `localize(ctx, object_id=...)` | `localization.py` | OpenRouter detection + validated measured object profile → `Target`; fail on unknown geometry, stale/uncertain detection, or excessive error (implemented; station profiles still required) |
 | `capture(ctx, view=...)` | `camera.py` | Photograph a configured view; write the file and report it (implemented) |
 | `close_gripper(ctx, force_percent=...)` | `gripper.py` | Close at a verified force → holding, or raise (implemented) |
 | `open_gripper(ctx)` | `gripper.py` | Open and confirm nothing is held (implemented) |

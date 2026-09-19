@@ -1,7 +1,7 @@
 """Perception team: camera/detection/frame transforms belong here.
 
-Detection is OpenCV's job and stays outside this module; what lives here is the one
-step after it -- turning a pixel a detector found into a place the arm can be sent.
+Detection lives in vision.py. This module turns a measured image anchor into a
+manipulation target only when the station has a validated object profile.
 
 That step is a hand-eye calibration: a 3x3 planar homography, measured once per
 camera view and stored in its own JSON artifact, that maps overhead image pixels to
@@ -13,17 +13,22 @@ instead of assuming the number is exact.
 """
 import json
 import math
+import asyncio
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 
-from . import camera
+from . import camera, vision
 from .types import Context, PoseYaw, Target
 
-IMPLEMENTED = set()
+IMPLEMENTED = {'localize'}
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SETTINGS = {
     'homographies': {},  # Camera view name -> calibration artifact path. No view, no mapping.
     'hover_z_mm': None,  # Task-frame z for a move over a detection. Deliberately unset.
+    'target_profiles': {},  # object_id -> human-measured profile artifact; never invented.
+    'max_observation_age_s': 60,
 }
 
 
@@ -57,7 +62,13 @@ def settings(config):
     if values['hover_z_mm'] is not None:
         number(values['hover_z_mm'], -10000, 10000,
                'primitive_settings.localization.hover_z_mm')
-    return {**values, 'homographies': dict(named)}
+    profiles = values['target_profiles']
+    if (not isinstance(profiles, dict) or any(
+            key not in config['objects'] or not isinstance(path, str) or not path.strip()
+            for key, path in profiles.items())):
+        raise ValueError('localization.target_profiles must map configured objects to profile files')
+    number(values['max_observation_age_s'], 1, 120, 'max_observation_age_s')
+    return {**values, 'homographies': dict(named), 'target_profiles': dict(profiles)}
 
 
 # --- Hand-eye calibration -----------------------------------------------------
@@ -111,8 +122,14 @@ def calibration(config, view):
     accuracy = {key: raw[key] for key in ('mean_error_mm', 'max_error_mm') if key in raw}
     for key, value in accuracy.items():
         number(value, 0, 10000, f'{name}: {key}')
+    size = raw.get('image_size')
+    if size is not None and (not isinstance(size, list) or len(size) != 2 or any(
+            type(value) is not int or not 1 <= value <= 16384 for value in size)):
+        raise ValueError(f'{name}: image_size must be measured [width, height] in pixels')
     return {'H': matrix(raw['H'], name), 'view': view, 'source': named[view],
-            'accuracy_mm': accuracy}
+            'accuracy_mm': accuracy, 'image_size': size,
+            'frame': raw.get('frame'), 'units': raw.get('units'),
+            'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
 def project(H, px, py):
@@ -203,6 +220,156 @@ def hover_pose(config, x, y, *, z=None, yaw=0.0) -> PoseYaw:
     return pose
 
 
+def target_profile(config, object_id):
+    """Offline admission of human-measured geometry; no credentials or robot needed."""
+    if object_id not in config['objects']:
+        raise ValueError(f'Unknown localization object: {object_id}')
+    path = settings(config)['target_profiles'].get(object_id)
+    if not path:
+        raise ValueError(f'{object_id}: missing measured localization target profile')
+    path = ROOT / path
+    try:
+        profile = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise ValueError(f'{object_id}: cannot read localization target profile') from exc
+    required = {'schema', 'status', 'object_id', 'view', 'camera_resource', 'frame', 'model', 'detector_version',
+                'calibration_sha256', 'image_size', 'bbox_anchor', 'offset_xy_mm', 'z_mm',
+                'orientation', 'max_error_mm', 'tolerance_mm', 'validated_region_mm',
+                'scope', 'evidence'}
+    if not isinstance(profile, dict) or set(profile) != required:
+        raise ValueError(f'{object_id}: target profile has missing or unexpected fields')
+    if (profile['schema'] != 'localization-profile/1' or profile['status'] != 'validated'
+            or profile['object_id'] != object_id or profile['frame'] != config['frame']
+            or profile['scope'] != 'fixed_orientation_and_height'
+            or profile['detector_version'] != 'bbox-1000-v1'):
+        raise ValueError(f'{object_id}: needs a validated profile for this object, frame and detector')
+    if not isinstance(profile['view'], str):
+        raise ValueError('Profile view must name a configured camera')
+    measured = calibration(config, profile['view'])
+    if (measured['frame'] != config['frame'] or measured['units'] != 'mm'
+            or profile['camera_resource'] != camera.resolve(config, profile['view'])):
+        raise ValueError('Profile/calibration must match the current camera resource, frame and millimetre units')
+    if not measured['image_size'] or profile['image_size'] != measured['image_size']:
+        raise ValueError('Calibration/profile needs matching measured image_size; do not guess resolution')
+    if profile['calibration_sha256'] != measured['sha256']:
+        raise ValueError('Calibration changed since the object profile was validated')
+    if profile['model'] != vision.credentials()['OPENROUTER_VISION_MODEL']:
+        raise ValueError('Vision model differs from the validated localization profile')
+    for key, low, high in (('bbox_anchor', 0, 1), ('offset_xy_mm', -10000, 10000)):
+        if not isinstance(profile[key], list) or len(profile[key]) != 2:
+            raise ValueError(f'{key} must contain two measured values')
+        for value in profile[key]:
+            number(value, low, high, key)
+    for key in ('max_error_mm', 'tolerance_mm'):
+        number(profile[key], 0 if key == 'max_error_mm' else 0.001, 10000, key)
+    error = measured['accuracy_mm'].get('max_error_mm')
+    if error is None or max(error, profile['max_error_mm']) > profile['tolerance_mm']:
+        raise ValueError('Measured calibration/localization error exceeds the approved grasp tolerance')
+    number(profile['z_mm'], -10000, 10000, 'z_mm')
+    orientation = profile['orientation']
+    if not isinstance(orientation, dict) or set(orientation) != {'o_x', 'o_y', 'o_z', 'theta'}:
+        raise ValueError('Profile needs a measured Viam orientation')
+    for key, value in orientation.items():
+        number(value, -360 if key == 'theta' else -1, 360 if key == 'theta' else 1, key)
+    if sum(orientation[key] ** 2 for key in ('o_x', 'o_y', 'o_z')) < 1e-8:
+        raise ValueError('Profile orientation cannot be zero')
+    region = profile['validated_region_mm']
+    if not isinstance(region, dict) or set(region) != {'x', 'y'}:
+        raise ValueError('Profile needs a measured XY validation region')
+    for axis, pair in region.items():
+        if not isinstance(pair, list) or len(pair) != 2:
+            raise ValueError('Profile validation region must contain two bounds per axis')
+        for value in pair:
+            number(value, -10000, 10000, axis)
+        if pair[0] >= pair[1]:
+            raise ValueError('Profile validation region bounds must increase')
+    evidence = profile['evidence']
+    if not isinstance(evidence, str) or not evidence.strip() or not (ROOT / evidence).is_file():
+        raise ValueError('Profile must reference existing physical measurement evidence')
+    return profile
+
+
+def readiness(config):
+    """Configuration status only; this never claims the current scene is ready."""
+    targets = {}
+    for identity in config['objects']:
+        try:
+            target_profile(config, identity)
+            targets[identity] = {'configured': True, 'reason': 'Profile checks pass; fresh scene and outcome gates still required'}
+        except ValueError as exc:
+            targets[identity] = {'configured': False, 'reason': str(exc)}
+    calibrations = {}
+    try:
+        for view in settings(config)['homographies']:
+            measured = calibration(config, view)
+            calibrations[view] = {k: measured[k] for k in ('image_size', 'accuracy_mm')}
+    except ValueError as exc:
+        calibrations['error'] = str(exc)
+    return {'targets': targets, 'calibrations': calibrations}
+
+
+def target_from_observation(config, object_id, observation, *, view, captured_at):
+    """Project a validated detector anchor. Fixed height/orientation are preconditions."""
+    profile = target_profile(config, object_id)
+    if observation.get('model') != profile['model'] or observation.get('detector_version') != profile['detector_version']:
+        raise ValueError('Observation does not match the validated detector')
+    if view != profile['view']:
+        raise ValueError('Observation is from the wrong camera view')
+    info = observation.get('image', {})
+    if [info.get('width'), info.get('height')] != profile['image_size']:
+        raise ValueError('Image resolution differs from the measured calibration')
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(captured_at)).total_seconds()
+    except (ValueError, TypeError) as exc:
+        raise ValueError('Capture timestamp is unknown') from exc
+    if not 0 <= age <= settings(config)['max_observation_age_s']:
+        raise ValueError('Observation is stale or its timestamp is in the future')
+    checked = vision.validate_observation({k: observation.get(k) for k in ('summary', 'detections')}, config['objects'])
+    matches = [item for item in checked['detections'] if item['object_id'] == object_id]
+    if len(matches) != 1 or matches[0]['visibility'] != 'clear':
+        raise ValueError(f'{object_id}: absent, occluded or uncertain; no target produced')
+    left, top, right, bottom = matches[0]['bbox']
+    u, v = profile['bbox_anchor']
+    px = (left + u * (right - left)) * info['width']
+    py = (top + v * (bottom - top)) * info['height']
+    mapped = pixel_to_frame(config, view, px, py)
+    x, y = mapped['x'] + profile['offset_xy_mm'][0], mapped['y'] + profile['offset_xy_mm'][1]
+    for axis, value in (('x', x), ('y', y)):
+        if not profile['validated_region_mm'][axis][0] <= value <= profile['validated_region_mm'][axis][1]:
+            raise ValueError('Detected target lies outside the physically validated region')
+    pose = {'x': x, 'y': y, 'z': profile['z_mm'], **profile['orientation']}
+    if not config['calibrated']:
+        raise ValueError('Localization requires calibrated workspace bounds')
+    for axis in ('x', 'y', 'z'):
+        bounds = config['workspace_mm'][axis]
+        if not bounds[0] <= pose[axis] <= bounds[1]:
+            raise ValueError('Localized target lies outside the calibrated workspace')
+    # Preserve the registry's exact Target contract. Evidence is saved separately.
+    return {'object_id': object_id, 'frame': config['frame'], 'pose': pose}
+
+
 async def localize(ctx: Context, *, object_id: str) -> Target:
-    """Return the object's manipulation target in ctx.config['frame']; fail if uncertain."""
-    raise NotImplementedError('Team supplies localization')
+    """OpenRouter detection + measured planar object profile -> fresh manipulation Target.
+
+    Requires a stationary scene and the profile's fixed object orientation/height,
+    established by the operator's entry gate. Never moves the arm.
+    """
+    profile = target_profile(ctx.config, object_id)
+    captured = await camera.capture(ctx, view=profile['view'])
+    images = [item for item in captured['images'] if item['mime_type'] in ('image/jpeg', 'image/png', 'image/webp')]
+    if len(images) != 1:
+        raise ValueError('Localization needs exactly one unambiguous colour image per camera view')
+    path = ROOT / images[0]['path']
+    observation = await asyncio.to_thread(vision.observe, path.read_bytes(), [object_id], model=profile['model'])
+    record = {'object_id': object_id, 'view': captured['view'], 'captured_at': captured['captured_at'],
+              'image_path': str(path), 'observation': observation}
+    try:
+        target = target_from_observation(ctx.config, object_id, observation,
+                                         view=captured['view'], captured_at=captured['captured_at'])
+        record['target'] = target
+        return target
+    except ValueError as exc:
+        record['blocked'] = str(exc)
+        raise
+    finally:
+        path.with_suffix('.localization.json').write_text(json.dumps(record, indent=2, allow_nan=False) + '\n')

@@ -3,16 +3,17 @@ ONE file: the actual shake primitive definition AND the script that
 runs it end to end (grip -> lift -> shake -> put down -> STOP, still
 holding).
 
-Speed pushed to 90 deg/s (half of xArm6's 180 deg/s hardware ceiling --
-real safety margin still there, not the absolute max). frequency_hz
-LEFT at 20 rather than pushed higher, since going faster on frequency
-is what causes stutter, not smoothness -- each move has real network
-round-trip time that a shorter requested interval can't shrink.
-samples_per_stroke REDUCED 6 -> 4: fewer, more spaced-out waypoints
-means fewer round-trips fighting the timing budget, letting the arm's
-own onboard acceleration/deceleration profiling do more of the actual
-smoothing between points, instead of our code trying to force many
-tiny steps through a connection that can't keep up with them.
+Direct mode sends one controller-profiled joint move per half-stroke, using
+the Viam UFactory module's `extra={direct: True, speed_d: ...}` extension.
+It avoids restarting Viam's interpolator for every tiny waypoint. Completion
+is still awaited; commands are never queued ahead of the arm. The existing
+90 deg/s request applies only to stroke commands, not global arm settings.
+Acceleration and hardware limits remain the driver's responsibility.
+
+frequency_hz is a pacing target, not a guarantee. Motion and readback time
+count toward that budget. Results report achieved frequency and overruns.
+The previous waypoint path is available with control_mode="sampled".
+See docs/shake-speed.md for driver compatibility and validation status.
 """
 import asyncio
 import json
@@ -31,14 +32,15 @@ from primitives import gripper as gripper_lib
 from primitives import motion
 from primitives.types import Context, Pose
 
-OVERRIDE_SPEED_DEG_S = 90.0  # half of xArm6 hardware max (180) -- real speed lever
+OVERRIDE_SPEED_DEG_S = 90.0  # Existing script request; not a payload safety certification.
 
 
 DEFAULT_SETTINGS = {
     'stroke_mm': 10.0,
-    'frequency_hz': 20.0,       # left unchanged -- see module docstring
+    'frequency_hz': 20.0,       # Requested ceiling; report what the arm achieves.
     'require_holding': True,
-    'samples_per_stroke': 4,    # reduced from 6 -- see module docstring
+    'samples_per_stroke': 4,    # Used only by the comparison mode, "sampled".
+    'control_mode': 'direct',
 }
 
 
@@ -53,6 +55,8 @@ def shake_settings(config):
     motion.bounded(values['samples_per_stroke'], 2, 60, 'primitive_settings.shake.samples_per_stroke')
     if type(values['require_holding']) is not bool:
         raise ValueError('primitive_settings.shake.require_holding must be boolean')
+    if values['control_mode'] not in ('direct', 'sampled'):
+        raise ValueError('primitive_settings.shake.control_mode must be direct or sampled')
     return values
 
 
@@ -92,35 +96,89 @@ async def _capture_joint_endpoints(ctx, arm, ends, plan_tuning, timeout):
     endpoints = {}
     for edge in ('top', 'bottom'):
         await motion.plan_to(ctx, ends[edge], plan_tuning, timeout, f'shake capture {edge}')
-        joints = await arm.get_joint_positions()
+        joints = await arm.get_joint_positions(timeout=timeout)
         endpoints[edge] = list(joints.values)
     return endpoints
 
 
 async def strokes(ctx, arm, endpoints, tuning, duration_s):
+    """Run bounded, sequential strokes; never skip ahead when the arm is late.
+
+    Endpoint capture leaves the arm at bottom. Both control modes follow the
+    same joint-space line; neither proves Cartesian or whole-arm clearance.
+    """
+    config, plan_tuning, timeout = motion.handles(ctx, 'shake')
+    motion.bounded(duration_s, 0, config['limits']['max_stir_duration_s'], 'duration_s')
+    motion.bounded(OVERRIDE_SPEED_DEG_S, 0, 90, 'shake stroke speed_deg_s')
     top = endpoints['top']
     bottom = endpoints['bottom']
     n_joints = len(top)
+    if not n_joints or len(bottom) != n_joints or any(
+            not math.isfinite(v) for v in [*top, *bottom]):
+        raise ValueError('shake endpoints must contain matching finite joint positions')
     half_period = 0.5 / tuning['frequency_hz']
-    samples = max(int(tuning['samples_per_stroke']), 2)
+    direct = tuning['control_mode'] == 'direct'
+    samples = 1 if direct else max(int(tuning['samples_per_stroke']), 2)
     step_s = half_period / samples
     began = time.monotonic()
     count = 0
+    calls = 0
+    motion_s = 0.0
+    readback_s = 0.0
+    sleep_s = 0.0
+    overruns = 0
     at_top = True
     while time.monotonic() - began < duration_s:
+        stroke_began = time.monotonic()
+        stroke_overran = False
         start_joints = bottom if at_top else top
         end_joints = top if at_top else bottom
         for i in range(1, samples + 1):
+            if time.monotonic() - began >= duration_s:
+                break
             frac = _ease(i / samples)
             target = [
                 start_joints[j] + (end_joints[j] - start_joints[j]) * frac
                 for j in range(n_joints)
             ]
-            await arm.move_to_joint_positions(JointPositions(values=target))
-            await asyncio.sleep(step_s)
-        count += 1
-        at_top = not at_top
-    return count, time.monotonic() - began
+            called = time.monotonic()
+            await arm.move_to_joint_positions(
+                JointPositions(values=target),
+                extra={'direct': direct, 'speed_d': OVERRIDE_SPEED_DEG_S,
+                       'waitAtEnd': True},
+                timeout=timeout)
+            motion_s += time.monotonic() - called
+            calls += 1
+            if i == samples:
+                read_started = time.monotonic()
+                reached = list((await arm.get_joint_positions(timeout=timeout)).values)
+                readback_s += time.monotonic() - read_started
+                if len(reached) != n_joints or any(not math.isfinite(v) for v in reached):
+                    raise RuntimeError('shake endpoint readback has invalid joint positions')
+                error = max(abs(a - b) for a, b in zip(reached, end_joints))
+                if error > plan_tuning['joint_tolerance_deg']:
+                    raise RuntimeError(f'shake endpoint missed by {error:.2f} degrees')
+                stroke_overran = time.monotonic() - stroke_began > half_period
+            # Count command latency as part of the interval, not an extra delay.
+            # Anchor each stroke separately so a late stroke causes no catch-up burst.
+            delay = min(stroke_began + i * step_s, began + duration_s) - time.monotonic()
+            if delay > 0:
+                sleep_started = time.monotonic()
+                await asyncio.sleep(delay)
+                sleep_s += time.monotonic() - sleep_started
+        else:
+            count += 1
+            overruns += stroke_overran
+            at_top = not at_top
+            continue
+        # Duration expired partway through a sampled stroke. Do not count it.
+        break
+    elapsed = time.monotonic() - began
+    return {'strokes': count, 'duration_s': elapsed,
+            'frequency_hz': count / (2 * elapsed) if elapsed else 0.0,
+            'control_mode': tuning['control_mode'], 'move_calls': calls,
+            'motion_call_time_s': motion_s, 'joint_readback_time_s': readback_s,
+            'pacing_sleep_s': sleep_s, 'overrun_strokes': overruns}
 
 
 async def shake(ctx, *, duration_s):
@@ -141,18 +199,18 @@ async def shake(ctx, *, duration_s):
     ends = swept_box(centre['pose'], tuning, config)
     arm = Arm.from_robot(ctx.robot, config['resources']['arm'])
 
-    print(f'Bypassing motion.py speed cap -- setting {OVERRIDE_SPEED_DEG_S} deg/s directly...')
-    await arm.do_command({'set_speed': OVERRIDE_SPEED_DEG_S}, timeout=timeout)
-
     endpoints = await _capture_joint_endpoints(ctx, arm, ends, plan_tuning, timeout)
-    count, elapsed = await strokes(ctx, arm, endpoints, tuning, duration_s)
+    print(f'Shake mode: {tuning["control_mode"]}; stroke speed request '
+          f'{OVERRIDE_SPEED_DEG_S} deg/s; frequency target {tuning["frequency_hz"]} Hz')
+    timing = await strokes(ctx, arm, endpoints, tuning, duration_s)
+    print(f'Achieved {timing["frequency_hz"]:.2f} Hz; '
+          f'{timing["move_calls"]} move calls; {timing["overrun_strokes"]} late strokes')
     settled = await motion.plan_to(ctx, centre['pose'], plan_tuning, timeout, 'shake centre')
     after = await gripper_lib.held(handle, timeout, **holding)
     if tuning['require_holding'] and after is not True:
         raise RuntimeError('Object was dropped during the shake; the gripper holds nothing')
-    return {'requested_duration_s': duration_s, 'duration_s': elapsed, 'strokes': count,
+    return {'requested_duration_s': duration_s, **timing,
             'requested_frequency_hz': tuning['frequency_hz'],
-            'frequency_hz': count / (2 * elapsed) if elapsed else 0.0,
             'stroke_mm': tuning['stroke_mm'], 'start_pose': start,
             'levelled_pose': centre['pose'],
             'swept_z_mm': [ends['bottom']['z'], ends['top']['z']],
@@ -160,31 +218,23 @@ async def shake(ctx, *, duration_s):
             'holding_before': before, 'holding_after': after, **settled}
 
 
-load_dotenv()
-API_KEY = os.environ['VIAM_API_KEY']
-API_KEY_ID = os.environ['VIAM_API_KEY_ID']
-MACHINE_ADDRESS = os.environ['VIAM_MACHINE_ADDRESS']
 SHAKE_DURATION_S = 14.5
 LIFT_MM = 50.0
 
 
 async def connect():
-    opts = RobotClient.Options.with_api_key(api_key=API_KEY, api_key_id=API_KEY_ID)
-    return await RobotClient.at_address(MACHINE_ADDRESS, opts)
+    load_dotenv()
+    opts = RobotClient.Options.with_api_key(api_key=os.environ['VIAM_API_KEY'],
+                                           api_key_id=os.environ['VIAM_API_KEY_ID'])
+    return await RobotClient.at_address(os.environ['VIAM_MACHINE_ADDRESS'], opts)
 
 
-async def main():
-    with open('config/local.json') as f:
-        config = json.load(f)
-
-    robot = await connect()
-
+async def run_sequence(robot, config):
     print('Gripping...')
     handle = Gripper.from_robot(robot, config['resources']['gripper'])
     grabbed = await handle.grab()
     if grabbed is False:
         print('Gripper reported nothing grasped -- aborting.')
-        await robot.close()
         return
     print('Grip confirmed.')
 
@@ -205,7 +255,22 @@ async def main():
 
     print('Done -- still holding.')
 
-    await robot.close()
+
+async def main():
+    with open('config/local.json') as f:
+        config = json.load(f)
+    robot = await connect()
+    try:
+        await run_sequence(robot, config)
+    except (Exception, asyncio.CancelledError):
+        try:
+            await asyncio.wait_for(robot.stop_all(),
+                                   timeout=config['limits']['primitive_timeout_s'])
+        except Exception as stop_error:
+            print(f'StopAll failed; arm state is unknown: {stop_error}')
+        raise
+    finally:
+        await robot.close()
 
 
 if __name__ == '__main__':

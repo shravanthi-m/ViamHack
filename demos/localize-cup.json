@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "instruction": "Observe the cup and return its measured manipulation target; do not move the robot.",
+  "steps": [{"id": "cup", "tool": "localize", "args": {"object_id": "cup"}}]
+}

@@ -1,7 +1,13 @@
-# Barista Bot
+# Varista
 
-A robot arm that pours and prepares drinks using Viam and human-built primitives,
-composed and refined by an agent.
+Meet **Claudia**, Varista’s robot bartender. She pours and prepares drinks using
+Viam and human-taught routines, composed and refined by an agent.
+
+For the audience display, run `.venv/bin/python -m runtime observer` and open
+http://127.0.0.1:8765. The [observer guide](docs/observer.md) covers camera snapshots,
+optional OpenRouter image labels, run activity, and voice/text requests such as
+“Claudia, help pour a drink.” Preview is the default; opt-in supervised execution
+runs the frozen coconut-water → pitcher routine with existing operator gates.
 
 For supervised hand-guided demonstrations and bounded grasp adaptation, see
 [Teach and replay](docs/teach_replay.md), including the coconut-water and pitcher commands.

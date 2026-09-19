@@ -17,7 +17,7 @@ from .compaction import COMPACT_TRACK, HOLD_PHASES, TRACK, compact_episode, desc
 from .reference import describe as reference_describe, write_reference
 from .connection import connect
 from .orchestrator import (describe_plan, missing_implementations, require_implementations,
-                           run_plan, validate_plan)
+                           require_localization_profiles, run_plan, validate_plan)
 
 LOCAL_CONFIG = ROOT / 'config/local.json'
 
@@ -26,6 +26,21 @@ def parser():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument('--config', default=str(DEFAULT_CONFIG), help='Full task config (no implicit merge)')
     sub = cli.add_subparsers(dest='command', required=True)
+    observer = sub.add_parser('observer', help='Varista UI with optional supervised Claudia routine')
+    observer.add_argument('--port', type=int, default=8765)
+    observer.add_argument('--image', help='Optional saved station image to preview')
+    observer.add_argument('--observation', help='Optional saved detections matching --image exactly')
+    observer.add_argument('--objects', help='Comma-separated detection IDs (default: coconut_water,pitcher,cup)')
+    observer.add_argument('--run', help='Exact run directory whose events to display')
+    observer.add_argument('--view', help='Enable read-only snapshots from this configured camera view')
+    observer.add_argument('--demo-pack', help='Exact frozen coconut/pitcher demo pack')
+    observer.add_argument('--enable-demo-execution', action='store_true',
+                          help='Allow UI drink requests to launch the fixed replay with terminal operator gates')
+    sub.add_parser('localization-status', help='Show measured localization prerequisites offline')
+    perceive = sub.add_parser('perceive', help='Analyze a saved image through OpenRouter; never connects to robot')
+    perceive.add_argument('image')
+    perceive.add_argument('--objects', help='Comma-separated detection IDs (default: coconut_water,pitcher,cup)')
+    perceive.add_argument('--out', required=True, help='Save image observations, normally under runs/')
     pack = sub.add_parser('prepare-demo', help='Freeze a supervised demo pack offline; no connection')
     pack.add_argument('--out', required=True, help='New directory, normally under runs/')
     pack.add_argument('--demonstrations', default=str(ROOT / 'demonstrations'))
@@ -199,6 +214,7 @@ async def agent_run(args, config):
     plan = read_json(args.plan)
     validate_plan(plan, config, execute=True)
     require_implementations(plan, implementations())
+    require_localization_profiles(plan, config)
     print(f'Valid plan, every tool implemented: {len(plan["steps"])} steps.\n')
     print(describe_plan(plan))
     print('\nNothing below is a mock. The next confirmation runs these steps on the machine.')
@@ -235,6 +251,20 @@ async def connected(args, config, plan=None):
 async def dispatch(args):
     config = read_json(args.config)
     validate_config(config)
+    if args.command == 'localization-status':
+        from primitives.localization import readiness
+        print(json.dumps(readiness(config), indent=2))
+        return
+    if args.command == 'perceive':
+        from primitives.vision import observe, select_objects
+        output = Path(args.out)
+        if output.exists():
+            raise ValueError('Use a new output path to preserve earlier perception evidence')
+        result = await asyncio.to_thread(observe, Path(args.image).read_bytes(), select_objects(config, args.objects))
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result, indent=2, allow_nan=False) + '\n')
+        print(json.dumps(result, indent=2))
+        return
     if args.command == 'prepare-demo':
         from .demo_pack import prepare
         manifest = prepare(args.config, args.demonstrations, args.out, compact=args.compact)
@@ -341,7 +371,7 @@ async def dispatch(args):
     else:
         plan = read_json(args.plan)
         execute = getattr(args, 'execute', False)
-        validate_plan(plan, config, execute=execute)
+        validate_plan(plan, config, execute=execute or getattr(args, 'executable', False))
         if args.command == 'validate':
             print(f'Valid plan: {len(plan["steps"])} steps. No connection or motion.')
             missing = missing_implementations(plan)
@@ -352,9 +382,12 @@ async def dispatch(args):
                 if args.executable:
                     raise ValueError('Plan needs primitives that are not implemented')
             else:
+                if args.executable:
+                    require_localization_profiles(plan, config)
                 print('Every tool has a team implementation.')
         elif execute:
             require_implementations(plan, implementations())  # Fail before connecting.
+            require_localization_profiles(plan, config)
             await connected(args, config, plan)
         else:
             print(await run_plan(plan, Context(config), runs=args.runs))
@@ -371,6 +404,12 @@ def main():
         await dispatch(args)
 
     try:
+        if args.command == 'observer':
+            from .observer import serve
+            config = read_json(args.config)
+            validate_config(config)
+            serve(args, config)
+            return
         asyncio.run(run())
     except (ValueError, KeyError, FileNotFoundError, RuntimeError, TimeoutError) as exc:
         raise SystemExit(str(exc)) from exc
