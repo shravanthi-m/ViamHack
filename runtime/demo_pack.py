@@ -17,7 +17,7 @@ def digest(path):
 
 def code_files():
     return sorted([*ROOT.glob('runtime/*.py'), *ROOT.glob('primitives/*.py'),
-                   ROOT / 'requirements.txt'])
+                   ROOT / 'requirements.txt', ROOT / 'shake_full.py'])
 
 
 def inside(root, relative):
@@ -74,6 +74,11 @@ def prepare(config_path, demonstrations, out, *, compact=False):
         summaries[name]['replay_force_percent'] = (gripper.force_for_object(config, name) if automatic
                                                     else meta.get('gripper_force_percent'))
     external = {str(p): digest(p) for p in [config_path, *code_files()]}
+    if config.get('taught_shake_book'):
+        from .fixed_tasks import shaker_book
+        shaker_book(config)
+        path = (ROOT / config['taught_shake_book']).resolve()
+        external[str(path)] = digest(path)
     for filename in config.get('primitive_settings', {}).get('localization', {}).get('homographies', {}).values():
         path = (ROOT / filename).resolve()
         external[str(path)] = digest(path)
@@ -115,7 +120,7 @@ def verify(pack, config_path):
     expected_code = {str(p) for p in code_files()}
     pinned_code = {p for p in manifest['external_sha256']
                    if Path(p).parent in (ROOT / 'runtime', ROOT / 'primitives')
-                   or Path(p) == ROOT / 'requirements.txt'}
+                   or Path(p) in (ROOT / 'requirements.txt', ROOT / 'shake_full.py')}
     if expected_code != pinned_code:
         raise ValueError('Runtime file list changed; prepare and rehearse again')
     for filename, expected in manifest['external_sha256'].items():

@@ -8,7 +8,34 @@ connect for motion. These are candidates until rehearsed on the station.
 | --- | --- | --- |
 | Signature pour | Saved home, empty hand, taught setup and fixed cup | Coconut pour/return, then pitcher pour/return; existing replay gates |
 | Reset | Known stopped state; empty hand or identified coconut carton/pitcher in its taught grip | Operator chooses identity, gripper checks held state; return to the taught place with a support-before-release gate, then home. Empty hand goes directly home. |
-| Shake held object | Securely side-gripped sealed object already lifted, levelling/oscillation space clear | Existing shake primitive for 3 seconds; finishes still holding at the levelled centre. No finding, pickup, placement, or release. |
+| Pick up and shake (website button) | Empty gripper, shaker at taught location, reviewed starting/approach path | Uses the taught book: approach, grip, lift, root shake_full, supported placement, release and retreat. |
+| Shake held object | Securely side-gripped sealed object already lifted, levelling/oscillation space clear | Root `shake_full.shake` for 3 seconds; finishes still holding at the levelled centre. No finding, pickup, placement, or release. |
+
+The UI does not call the older `primitives.shake` or root `run_sequence`.
+All `primitive_settings.shake` fields must be explicitly reviewed/configured;
+resolved settings and the root 90 deg/s stroke request print before admission.
+The frozen pack now includes root `shake_full.py`; old packs must be prepared
+again, not edited to bypass drift checks. Preview mode deliberately never moves
+the robot. Supervised mode waits for the launching terminal's operator gate.
+Runtime failures now appear in the UI, and block further tasks until inspection
+and restart. A failed StopAll requires physical-stop intervention, not a UI retry.
+
+The separately taught pickup/return routine completed once on 2026-09-19 with
+operator confirmation. An unchanged repeat reported self-collision on approach
+and StopAll failed; the operator subsequently reported the arm stationary.
+Pickup repeatability is therefore NOT established. The full-pickup button is
+integrated but no UI hardware trial was performed. Resolve the fault
+and recheck the path before any physical task, including held-object shaking.
+
+For the full button, set `taught_shake_book` in local config to the reviewed pose
+book, for example `runs/shake-poses.json`. The book is validated and its hash is
+pinned when preparing the pack, then checked again after the terminal gate.
+Missing poses/settings, an unverified station, or changed files block connection.
+The local book's station verification was revoked after the collision fault;
+restore it only after reviewing the actual stopped state and approach path.
+Do not upload pose books, local config, credentials or raw run evidence to Git.
+The held-only action remains available via the text request `Shake held object`
+or CLI task `shake`; the new full routine uses task `shaker`.
 
 Unknown objects cannot use Reset. After a shake, an operator must handle an object
 without a taught return (including the shaker). Never select pitcher/carton to

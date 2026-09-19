@@ -112,3 +112,26 @@ class DemoPackTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(FileExistsError):
             self.freeze()
         self.assertEqual(before, (self.pack / 'manifest.json').read_bytes())
+
+    def test_root_shake_is_frozen_and_missing_pin_is_rejected(self):
+        from runtime.config import ROOT
+        manifest = self.freeze()
+        key = str(ROOT / 'shake_full.py')
+        self.assertIn(key, manifest['external_sha256'])
+        del manifest['external_sha256'][key]
+        write(self.pack / 'manifest.json', manifest)
+        with self.assertRaisesRegex(ValueError, 'Runtime file list changed'):
+            verify(self.pack, self.config_path)
+
+    def test_taught_shake_book_is_pinned_and_drift_rejected(self):
+        book = self.root / 'shake.json'
+        write(book, {'test': 'pose book fixture'})
+        cfg = config()
+        cfg['taught_shake_book'] = str(book)
+        write(self.config_path, cfg)
+        with patch('runtime.fixed_tasks.shaker_book'):
+            manifest = self.freeze()
+        self.assertIn(str(book), manifest['external_sha256'])
+        book.write_text('{}')
+        with self.assertRaisesRegex(ValueError, 'dependency changed'):
+            verify(self.pack, self.config_path)

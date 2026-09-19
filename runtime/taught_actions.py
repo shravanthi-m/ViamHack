@@ -148,12 +148,14 @@ async def execute(book, config, io, action, log):
             await move('source_approach', book['placement_speed_deg_s'])
             log('complete')
             return result
-    except (Exception, asyncio.CancelledError):
+    except (Exception, asyncio.CancelledError) as failure:
         try:
             await io.stop()
             log('stop_all_requested')
         except BaseException as exc:
             print(f'StopAll failed; verify robot manually: {type(exc).__name__}', flush=True)
+            log('stop_all_failed', error=f'{type(exc).__name__}: {exc}')
+        log('failed', error=f'{type(failure).__name__}: {failure}')
         raise  # Never auto-release or restart after an uncertain failure.
 
 

@@ -47,8 +47,8 @@ function setup({autoLive = false} = {}) {
       return {ok: true, json: async () => route === '/api/request'
         ? body.text === 'Claudia, help pour a drink'
           ? {intent: 'signature', status: 'preview', message: 'Signature preview; no robot motion.'}
-          : body.text === 'Reset station' || body.text === 'Shake held object'
-            ? {intent: body.text === 'Reset station' ? 'reset' : 'shake', status: 'preview', message: 'Fixed task preview; no robot motion.'}
+          : body.text === 'Reset station' || body.text === 'Pick up and shake'
+            ? {intent: body.text === 'Reset station' ? 'reset' : 'shaker', status: 'preview', message: 'Fixed task preview; no robot motion.'}
             : {intent: 'unsupported', message: 'Unsupported'}
         : {ok: true}};
     },
@@ -66,7 +66,7 @@ test('signature preset uses the existing request endpoint and displays preview h
   assert.equal(app.element('reply').textContent, 'Signature preview; no robot motion.');
 });
 
-test('reset and held-object shake select their fixed tasks in preview', async () => {
+test('reset and full pickup shake select their fixed tasks in preview', async () => {
   const app = setup(); await settle();
   for (const button of app.buttons.slice(1)) {
     button.click(); await settle();
@@ -75,7 +75,23 @@ test('reset and held-object shake select their fixed tasks in preview', async ()
     assert.match(app.element('reply').textContent, /no robot motion/);
   }
   assert.equal(app.posts[0].body.text, 'Reset station');
-  assert.equal(app.posts[1].body.text, 'Shake held object');
+  assert.equal(app.posts[1].body.text, 'Pick up and shake');
+});
+
+test('full shake dispatch displays the terminal gate and runtime fault', async () => {
+  const app = setup(); await settle();
+  app.state.demo.enabled = true;
+  app.setHandler(async () => ({ok: true, json: async () => ({
+    intent: 'shaker', status: 'waiting_operator', message: 'Waiting for operator'
+  })}));
+  app.buttons[2].click(); await settle();
+  assert.equal(app.posts.at(-1).body.text, 'Pick up and shake');
+  assert.equal(app.element('request-status').textContent, 'WAITING FOR OPERATOR');
+  app.state.demo.status = 'failed';
+  app.state.demo.error = 'Self Collision Error';
+  await vm.runInContext('refresh()', app.context);
+  assert.equal(app.element('request-status').textContent, 'TASK STOPPED');
+  assert.match(app.element('reply').textContent, /Self Collision Error/);
 });
 
 test('unsupported custom requests stay editable and blank submissions do nothing', async () => {

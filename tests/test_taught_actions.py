@@ -171,6 +171,19 @@ class TaughtActionTests(unittest.IsolatedAsyncioTestCase):
             await ta.dispatch(args)
             connect.assert_not_awaited()
 
+    async def test_stop_failure_is_logged_and_original_fault_preserved(self):
+        config, book = fixture()
+        io = FakeIO(config)
+        io.fail_at = 1
+        io.stop = AsyncMock(side_effect=RuntimeError('stop unavailable'))
+        events = []
+        with self.assertRaisesRegex(RuntimeError, 'planning failed'):
+            await ta.execute(book, config, io, AsyncMock(),
+                             lambda step, **data: events.append((step, data)))
+        self.assertEqual(events[-2][0], 'stop_all_failed')
+        self.assertIn('stop unavailable', events[-2][1]['error'])
+        self.assertEqual(events[-1][0], 'failed')
+
 
 if __name__ == '__main__':
     unittest.main()

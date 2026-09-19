@@ -76,7 +76,7 @@ class FixedTaskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.io.calls.count('open'), 1)
 
     async def test_shake_empty_hand_never_calls_primitive(self):
-        with patch('primitives.shake.shake', new_callable=AsyncMock) as shake:
+        with patch('shake_full.shake', new_callable=AsyncMock) as shake:
             with self.assertRaisesRegex(RuntimeError, 'verified held'):
                 await self.run_task('shake', ['yes'])
             shake.assert_not_awaited()
@@ -84,7 +84,7 @@ class FixedTaskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_shake_uses_existing_primitive_and_never_opens(self):
         self.io.held = True
-        with patch('primitives.shake.shake', AsyncMock(return_value={'holding_after': True})) as shake:
+        with patch('shake_full.shake', AsyncMock(return_value={'holding_after': True})) as shake:
             await self.run_task('shake', ['yes', 'yes'])
             self.assertEqual(shake.call_args.kwargs, {'duration_s': 3})
         self.assertNotIn('open', self.io.calls)
@@ -92,9 +92,83 @@ class FixedTaskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancellation_stops_and_closes_without_release(self):
         self.io.held = True
-        with patch('primitives.shake.shake', AsyncMock(side_effect=asyncio.CancelledError())):
+        with patch('shake_full.shake', AsyncMock(side_effect=asyncio.CancelledError())):
             with self.assertRaises(asyncio.CancelledError):
                 await self.run_task('shake', ['yes'])
         self.assertIn('stop', self.io.calls)
         self.assertNotIn('open', self.io.calls)
         self.robot.close.assert_awaited_once()
+
+    async def test_lost_object_after_shake_stops_without_release(self):
+        self.io.held = True
+        async def drop(*args, **kwargs):
+            self.io.held = False
+            return {'holding_after': False}
+        with patch('shake_full.shake', side_effect=drop):
+            with self.assertRaisesRegex(RuntimeError, 'no longer held'):
+                await self.run_task('shake', ['yes'])
+        self.assertIn('stop', self.io.calls)
+        self.assertNotIn('open', self.io.calls)
+
+
+class ShakeAdmissionTests(unittest.TestCase):
+    def test_pickup_needs_correct_reviewed_book(self):
+        from tests.test_taught_actions import fixture
+        cfg, book = fixture()
+        cfg['taught_shake_book'] = 'runs/test.json'
+        with patch('runtime.fixed_tasks.read_json', return_value=book):
+            self.assertEqual(fixed_tasks.shaker_book(cfg), book)
+            book['station_verified'] = False
+            with self.assertRaisesRegex(ValueError, 'station'):
+                fixed_tasks.shaker_book(cfg)
+        cfg.pop('taught_shake_book')
+        with self.assertRaisesRegex(ValueError, 'taught_shake_book'):
+            fixed_tasks.shaker_book(cfg)
+
+    def test_explicit_root_settings_required(self):
+        import shake_full
+        cfg = config()
+        with patch('runtime.fixed_tasks.verify', return_value={}), \
+             patch('runtime.fixed_tasks.read_json', return_value=cfg):
+            cfg.setdefault('primitive_settings', {}).pop('shake', None)
+            with self.assertRaisesRegex(ValueError, 'explicitly configure'):
+                fixed_tasks.validate('shake', 'pack', 'config')
+            cfg['primitive_settings']['shake'] = dict(shake_full.DEFAULT_SETTINGS)
+            fixed_tasks.validate('shake', 'pack', 'config')
+            cfg['primitive_settings']['shake']['require_holding'] = False
+            with self.assertRaisesRegex(ValueError, 'require_holding'):
+                fixed_tasks.validate('shake', 'pack', 'config')
+
+
+class PickupUITests(unittest.IsolatedAsyncioTestCase):
+    async def test_full_task_reuses_taught_flow_and_root_action(self):
+        from tests.test_taught_actions import fixture, FakeIO
+        from runtime.config import read_json
+        import shake_full
+        cfg, book = fixture()
+        io, robot = FakeIO(cfg), AsyncMock()
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('runtime.fixed_tasks.validate', return_value=(cfg, {})), \
+             patch('runtime.fixed_tasks.shaker_book', return_value=book), \
+             patch('runtime.connection.connect', AsyncMock(return_value=robot)), \
+             patch('runtime.__main__.check_resources'), \
+             patch('runtime.taught_actions.ActionIO', return_value=io), \
+             patch('runtime.taught_actions.execute', new_callable=AsyncMock) as execute:
+            result = await fixed_tasks.execute('shaker', 'pack', 'config',
+                       ask_fn=AsyncMock(side_effect=['yes', 'yes']), runs=directory)
+            execute.assert_awaited_once()
+            self.assertIs(execute.call_args.args[3], shake_full.shake)
+            self.assertEqual(read_json(result / 'book.json'), book)
+            self.assertEqual(read_json(result / 'result.json')['status'], 'completed')
+            robot.close.assert_awaited_once()
+
+    async def test_declined_pickup_gate_never_connects(self):
+        from tests.test_taught_actions import fixture
+        cfg, book = fixture()
+        with patch('runtime.fixed_tasks.validate', return_value=(cfg, {})), \
+             patch('runtime.fixed_tasks.shaker_book', return_value=book), \
+             patch('runtime.connection.connect', new_callable=AsyncMock) as connect:
+            with self.assertRaises(RuntimeError):
+                await fixed_tasks.execute('shaker', 'pack', 'config',
+                    ask_fn=AsyncMock(return_value='no'), runs='unused')
+            connect.assert_not_awaited()

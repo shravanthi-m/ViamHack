@@ -4,11 +4,9 @@ from pathlib import Path
 
 from primitives import motion
 from primitives.types import Context
-from .config import read_json, validate_config, validate_pose
+from .config import ROOT, read_json, validate_config, validate_pose
 from .demo_pack import verify
 from .demonstrations import ViamIO, confirm, event, new_directory, now, stop_on_failure, write
-from .orchestrator import require_implementations, validate_plan
-from primitives.registry import implementations
 from .putback import poses
 
 RECIPES = {
@@ -17,15 +15,35 @@ RECIPES = {
               'Return identified object to its taught place if held', 'Return home with empty hand'],
     'shake': ['Start with a securely held, sealed object', 'Shake for 3 seconds',
               'Finish still holding at the levelled centre'],
+    'shaker': ['Start empty with shaker at taught location', 'Approach and grip',
+               'Lift and run shake_full', 'Return to supported source pose',
+               'Release and retreat'],
 }
+
+
+def shaker_book(config):
+    from .taught_actions import validate as validate_book
+    path = config.get('taught_shake_book')
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError('Configure taught_shake_book with the reviewed shake pose file')
+    book = read_json(ROOT / path)
+    if book.get('action') != 'shake':
+        raise ValueError('Pick up and shake requires a shake pose book')
+    validate_book(book, config)
+    return book
 
 
 def validate(task, pack, config_path):
     if task not in RECIPES:
-        raise ValueError('Choose signature, reset, or shake')
+        raise ValueError('Choose signature, reset, shake, or shaker')
     manifest = verify(pack, config_path)
     config = read_json(config_path)
     validate_config(config, execute=True)
+    if task == 'shaker':
+        shaker_book(config)
+        path = str((ROOT / config['taught_shake_book']).resolve())
+        if path not in manifest['external_sha256']:
+            raise ValueError('Prepare a new pack that pins the taught shake book')
     if task == 'reset':
         origin = motion.settings(config)['origin_pose']
         if origin is None:
@@ -34,13 +52,14 @@ def validate(task, pack, config_path):
         for name in ('coconut_water', 'pitcher'):
             poses(config, name, root=Path(pack) / 'demonstrations')
     if task == 'shake':
-        from primitives import shake
-        if not shake.settings(config)['require_holding']:
+        import shake_full
+        supplied = config.get('primitive_settings', {}).get('shake')
+        if not isinstance(supplied, dict) or set(supplied) != set(shake_full.DEFAULT_SETTINGS):
+            raise ValueError('Review and explicitly configure every shake_full setting before UI execution')
+        if not shake_full.shake_settings(config)['require_holding']:
             raise ValueError('The fixed shake requires require_holding=true')
-        plan = dict(version=1, instruction='Shake an already held object for three seconds.',
-                    steps=[dict(id='shake', tool='shake', args={'duration_s': 3})])
-        validate_plan(plan, config, execute=True)
-        require_implementations(plan, implementations())
+        if config['limits']['max_stir_duration_s'] < 3:
+            raise ValueError('Fixed shake duration exceeds the configured limit')
     return config, manifest
 
 
@@ -49,12 +68,23 @@ async def execute(task, pack, config_path, *, ask_fn, runs):
     from .connection import connect
     from .__main__ import check_resources
 
-    if task not in ('reset', 'shake'):
+    if task not in ('reset', 'shake', 'shaker'):
         raise ValueError('Signature uses the existing supervised replay executor')
     config, _ = validate(task, pack, config_path)
     held = None
     targets = None
-    if task == 'reset':
+    if task == 'shaker':
+        book = shaker_book(config)
+        import shake_full
+        print('Pickup shake settings:', shake_full.shake_settings(config), flush=True)
+        print('Grip:', book['force_percent'], 'travel:', book['travel_speed_deg_s'],
+              'placement:', book['placement_speed_deg_s'], 'duration:', book['duration_s'],
+              'stroke speed:', shake_full.OVERRIDE_SPEED_DEG_S, flush=True)
+        await confirm('Full pickup/shake/return intended: fault-free stationary arm, empty hand, '
+                      'shaker at taught location, free-drive OFF, no other controller, '
+                      'current-to-approach and held-object paths reviewed and clear, '
+                      'source placement supported, operator beside stop control?', ask_fn)
+    elif task == 'reset':
         held = (await ask_fn('Observed held object: type empty, coconut_water, or pitcher; q if unknown:')).strip()
         if held not in ('empty', 'coconut_water', 'pitcher'):
             raise ValueError('Unknown held object; establish the station state before reset')
@@ -64,13 +94,19 @@ async def execute(task, pack, config_path, *, ask_fn, runs):
                       'if loaded, same taught grip/orientation, original return spot clear, '
                       '60 mm vertical approach and all carried-object/home paths clear?', ask_fn)
     else:
+        import shake_full
+        print('UI action: root shake_full.shake; settings:', shake_full.shake_settings(config), flush=True)
+        print('Stroke speed request:', shake_full.OVERRIDE_SPEED_DEG_S, 'deg/s', flush=True)
         await confirm('Shake intended: sealed object already securely side-gripped and lifted clear; '
                       'arm stationary, free-drive OFF, levelling rotation and full shake swept volume '
                       'clear? This shakes for 3 seconds and finishes STILL HOLDING; no pickup or release.', ask_fn)
     # Recheck frozen dependencies after the operator wait, before connecting.
     validate(task, pack, config_path)
-    robot = await connect()
-    io = ViamIO(Context(config, robot))
+    if task == 'shaker':
+        book = shaker_book(config)
+    robot = await connect(managed_reconnect=False)
+    from .taught_actions import ActionIO
+    io = (ActionIO if task == 'shaker' else ViamIO)(Context(config, robot))
     directory = None
     outcome = dict(mode='execute', status='running', task=task, started_at=now(), recovery_attempt_budget=0)
     try:
@@ -78,6 +114,15 @@ async def execute(task, pack, config_path, *, ask_fn, runs):
         write(directory / 'result.json', outcome)
         check_resources(robot, config)
         async with asyncio.timeout(config['limits']['run_timeout_s']):
+            if task == 'shaker':
+                from .taught_actions import execute as run_taught, action_function
+                write(directory / 'book.json', book)
+                await run_taught(book, config, io, action_function('shake'),
+                                lambda step, **data: event(directory, step, **data))
+                await confirm('Shaker supported and stable, hand empty after retreat, '
+                              'no collision/slip/spill?', ask_fn)
+                outcome.update(status='completed', success_source='operator_report_and_gripper')
+                return directory
             await io.prepare()
             holding = await io.holding()
             if task == 'reset':
@@ -97,11 +142,14 @@ async def execute(task, pack, config_path, *, ask_fn, runs):
                     raise RuntimeError('Empty hand not verified at home')
                 await confirm('Arm at home, hand empty, and returned object upright/stable if applicable?', ask_fn)
             else:
-                from primitives import shake
+                import shake_full
                 if holding is not True:
                     raise RuntimeError('Shake requires a verified held object; no motion')
                 event(directory, 'shake_started', duration_s=3)
-                result = await shake.shake(Context(config, robot), duration_s=3)
+                async with asyncio.timeout(config['limits']['primitive_timeout_s']):
+                    result = await shake_full.shake(Context(config, robot), duration_s=3)
+                if await io.holding() is not True:
+                    raise RuntimeError('Object no longer held after shake; inspect before recovery')
                 event(directory, 'shake_finished', result=result)
                 await confirm('Object still securely held, no spill/contact, arm stationary?', ask_fn)
         outcome.update(status='completed', success_source='operator_report_and_gripper')

@@ -15,6 +15,7 @@ class IntentTests(unittest.TestCase):
         self.assertEqual(intent('Claudia, what do you see?'), 'scene')
         self.assertEqual(intent('Reset station'), 'reset')
         self.assertEqual(intent('Shake held object'), 'shake')
+        self.assertEqual(intent('Pick up and shake'), 'shaker')
 
     def test_unsupported_modifications_never_select_script(self):
         for text in ('Do not pour a drink', 'pour a drink then shake it',
@@ -33,7 +34,7 @@ class IntentTests(unittest.TestCase):
 
     def test_all_fixed_tasks_preview_without_starting_a_worker(self):
         demo = ClaudiaDemo()
-        for task in ('reset', 'shake'):
+        for task in ('reset', 'shake', 'shaker'):
             value = demo.request(task)
             self.assertEqual(value['status'], 'preview')
             self.assertEqual(value['intent'], task)
@@ -98,6 +99,7 @@ class ExecutionTests(unittest.TestCase):
             demo.request('pour a drink')
             demo.thread.join(2)
             self.assertEqual(demo.state()['status'], 'failed')
+            self.assertEqual(demo.state()['error'], 'RuntimeError: stopped')
             with self.assertRaisesRegex(ValueError, 'reset'):
                 demo.request('pour a drink')
 

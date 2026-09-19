@@ -51,6 +51,8 @@ def intent(text):
         return 'reset'
     if words in ('shake', 'shake held object'):
         return 'shake'
+    if words in ('pick up and shake', 'pick up and shake the shaker', 'full shake routine', 'shaker'):
+        return 'shaker'
     return 'unsupported'
 
 
@@ -64,6 +66,7 @@ class ClaudiaDemo:
         self.closing = False
         self.run_root = None
         self.status, self.prompt = 'idle', None
+        self.error = None
         self.selected = 'signature'
         if enabled:
             if not self.pack or not self.config_path:
@@ -74,7 +77,7 @@ class ClaudiaDemo:
 
     def state(self):
         with self.lock:
-            return {'enabled': self.enabled, 'status': self.status, 'prompt': self.prompt,
+            return {'enabled': self.enabled, 'status': self.status, 'prompt': self.prompt, 'error': self.error,
                     'task': self.selected, 'recipe': RECIPES[self.selected],
                     'active': bool(self.thread and self.thread.is_alive())}
 
@@ -94,7 +97,7 @@ class ClaudiaDemo:
         if selected == 'scene':
             return {'intent': selected}
         if selected == 'unsupported':
-            return {'intent': selected, 'message': 'Choose signature pour, reset, or shake held object. Shaker pickup and automatic object identification for reset are unavailable.'}
+            return {'intent': selected, 'message': 'Choose signature pour, reset, or pick up and shake. Automatic object identification for reset is unavailable.'}
         if review_only:
             return {'intent': selected, 'status': 'review', 'recipe': RECIPES[selected],
                     'message': 'Review this fixed task and press send. No motion has started.'}
@@ -115,6 +118,7 @@ class ClaudiaDemo:
             self.selected = selected
             self.run_root = ROOT / 'runs' / 'claudia' / uuid4().hex
             self.status, self.prompt = 'waiting_operator', None
+            self.error = None
             self.thread = threading.Thread(target=self._worker, name='claudia-demo')
             self.thread.start()
             return {'intent': selected, 'status': 'waiting_operator', 'recipe': RECIPES[selected],
@@ -170,6 +174,7 @@ class ClaudiaDemo:
                 print(f'Claudia routine stopped: {type(exc).__name__}: {exc}', flush=True)
                 with self.lock:
                     self.status = 'failed'
+                    self.error = f'{type(exc).__name__}: {exc}'
             finally:
                 with self.lock:
                     self.prompt = None

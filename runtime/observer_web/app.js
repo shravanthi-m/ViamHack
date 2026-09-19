@@ -161,7 +161,7 @@ async function refresh() {
     const demo = state.demo || {};
     $('station-mode').textContent = demo.enabled ? 'SUPERVISED ROBOT MODE' : 'PREVIEW MODE';
     $('mode-note').textContent = demo.enabled
-      ? 'Fixed tasks · Operator checks in the terminal. Shake starts and finishes holding.'
+      ? 'Fixed tasks · Operator checks in the terminal. Pick up and shake uses reviewed taught poses.'
       : 'Preview mode · No robot motion. Start supervised mode to execute fixed tasks.';
     if (showingDemo) {
       const progress = {
@@ -172,7 +172,8 @@ async function refresh() {
       }[demo.status];
       if (progress) {
         $('request-status').textContent = progress[0];
-        $('reply').textContent = progress[1];
+        $('reply').textContent = demo.status === 'failed' && demo.error
+          ? progress[1] + ' ' + demo.error : progress[1];
       }
     }
     await ensureLive();
@@ -200,13 +201,13 @@ async function submitRequest(text, task = null) {
     $('request-status').textContent = 'SENDING REQUEST';
     try {
       const result = await post('/api/request', {text, review_only: false});
-      showingDemo = ['signature', 'reset', 'shake'].includes(result.intent) && result.status === 'waiting_operator';
+      showingDemo = ['signature', 'reset', 'shake', 'shaker'].includes(result.intent) && result.status === 'waiting_operator';
       const unsupported = result.intent === 'unsupported' || result.intent === 'scene';
       $('request-status').textContent = unsupported ? 'TASK NOT CONNECTED'
         : result.status === 'preview' ? 'PREVIEW · NO ROBOT MOTION'
         : showingDemo ? 'WAITING FOR OPERATOR' : 'CLAUDIA';
       $('reply').textContent = unsupported
-        ? 'Choose signature pour, reset, or shake held object. This request is unsupported; no motion was started.'
+        ? 'Choose signature pour, reset, or pick up and shake. This request is unsupported; no motion was started.'
         : result.message;
       $('draft-text').textContent = text;
       $('draft-text').hidden = false;
