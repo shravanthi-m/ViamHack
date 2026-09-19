@@ -208,6 +208,7 @@ async def main():
         config = json.load(f)
 
     robot = await connect()
+    await robot.refresh()  # re-sync the resource list in case 'motion' wasn't in the initial snapshot
     ctx = Context(config=config, robot=robot)
     handle = Gripper.from_robot(robot, config['resources']['gripper'])
 
